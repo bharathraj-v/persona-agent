@@ -1,36 +1,20 @@
 # persona-agent
 
-> **LangGraph-based conversational AI agent with continuous memory, dynamic LLM persona selection, adaptive texting pacing, and directional trait elicitation for behavioral profiling.**
+> LangGraph-based conversational AI agent with continuous memory, dynamic LLM persona selection, adaptive communication pacing, and directional trait elicitation for behavioral profiling.
 
 ---
 
-## 🌟 Overview
+## Overview
 
-`persona-agent` is an AI companion backend built with **LangGraph**, **FastAPI**, **Google Gemini**, and **PostgreSQL**. It is designed to engage in organic, human conversations across distinct character archetypes while simultaneously serving as an **intelligent data collection engine** that maps out a user's personality traits through natural conversation.
+`persona-agent` is an asynchronous conversational agent backend implemented with **LangGraph**, **FastAPI**, **Google Gemini**, and **PostgreSQL**. The system provides multi-turn conversational interactions across distinct character archetypes while concurrently functioning as an automated behavioral observation engine that constructs a user personality profile through natural dialogue.
 
-Rather than forcing the user to pick a persona upfront or deterministically guessing, `persona-agent` starts in an adaptive discovery mode. An **LLM selector node** observes the user's communication style, slang, tone, and interests over the first 2–3 turns to dynamically choose the ideal companion archetype for them.
-
----
-
-## ⚡ Core Features
-
-- **🤖 Dynamic LLM Persona Selection**:
-  - Starts as **Nova (`discovery`)**, a welcoming, open companion observing the user's vibe.
-  - Across the first 1–3 turns, an internal LLM agent evaluates the conversation and locks in the best complementary persona:
-    - **Leo (`curious_banter`)**: Witty, fast-paced, observant, and playful.
-    - **Marcus (`pragmatic_mentor`)**: Grounded, calm, direct, and reflective.
-    - **Maya (`empathetic_confidant`)**: Warm, emotionally perceptive, and patient.
-    - **Zane (`analytical_challenger`)**: Sharp intellectual sparring partner who loves probing "why".
-- **📱 Adaptive Texting Style (Pacing)**: Analyzes incoming user messages in real time (brevity, lowercase formatting, slang density, and emojis) and dynamically adapts the character's pacing to match the user's natural communication cadence.
-- **🎯 Directional Trait Elicitation**: Inspects the user's personality profile to find low-confidence traits, then subtly steers conversations with situational probes without ever revealing trait names or breaking character.
-- **🧠 Continuous & Persistent Memory**:
-  - **Short-Term Thread Memory**: Managed via LangGraph checkpointing (`AsyncPostgresSaver`) for multi-turn conversational context.
-  - **Long-Term User Trait Profile**: Stored in PostgreSQL with running Bayesian confidence scores, observation counts, and direct user quote evidence.
-- **🔮 Powered by Google Gemini**: Uses `gemini-2.5-flash` via `langchain-google-genai` for fast, cost-effective, and nuanced generation.
+Rather than requiring static persona selection at initialization, `persona-agent` begins in an adaptive discovery mode. An LLM-driven evaluation node analyzes the user's communication style, vocabulary, tone, and topical engagement over the initial turns to select and bind the optimal companion archetype dynamically.
 
 ---
 
-## 🏗️ Architecture
+## Architecture and Core Components
+
+### Workflow Pipeline
 
 ```text
 [Next.js Chat Frontend]
@@ -41,92 +25,122 @@ Rather than forcing the user to pick a persona upfront or deterministically gues
           │
           ▼
  [LangGraph State Machine]
-   1. Style Analyzer Node     ──> Detects: length, tone, slang, formatting
-   2. Persona Selector Node   ──> LLM assesses first 1-3 turns to select & lock persona
-   3. Elicitation Goal Node   ──> Identifies lowest-confidence traits to target
+   1. Style Analyzer Node     ──> Extracts message brevity, syntax, informal density
+   2. Persona Selector Node   ──> Evaluates turns 1-3 to classify and lock persona
+   3. Elicitation Goal Node   ──> Identifies low-confidence traits requiring signal
    4. Persona Generator Node  ──> Generates in-character response with style pacing (Gemini)
           │
           ▼
-   [Streamed to User immediately via SSE]
+   [Streamed to Client via SSE]
 ```
 
-*(Note: Trait extraction triggering is decoupled and currently planned for scheduled batches/milestone-based checkpoints.)*
+### Key Capabilities
+
+- **Dynamic LLM Persona Selection**:
+  - Initializes with `discovery` (Nova), an open conversational baseline.
+  - Across turns 1–3, an evaluation model assesses dialogue characteristics to transition into one of four focused archetypes:
+    - **Leo (`curious_banter`)**: Observant, conversational, informal pacing.
+    - **Marcus (`pragmatic_mentor`)**: Grounded, reflective, direct, and pragmatic.
+    - **Maya (`empathetic_confidant`)**: Attentive, emotionally perceptive, and supportive.
+    - **Zane (`analytical_challenger`)**: Structured, dialectical, and logically rigorous.
+- **Adaptive Communication Pacing**: Inspects incoming messages in real time (token length, capitalization patterns, informal slang, and punctuation) to adjust generation constraints to match user cadence.
+- **Directional Trait Elicitation**: Evaluates the user's personality profile to identify dimensions with low confidence scores, seeding situational prompts that elicit diagnostic behavioral signals without disclosing the underlying rubric.
+- **State Persistence and Memory**:
+  - **Thread-Scoped State**: Managed via LangGraph checkpointing (`AsyncPostgresSaver`) for multi-turn dialogue continuity.
+  - **Long-Term Trait Repository**: Maintained in PostgreSQL with running Bayesian confidence estimates, observation counts, and recorded user evidence snippets.
+- **Model Integration**: Utilizes Google Gemini (`gemini-3.5-flash-lite`) via `langchain-google-genai` for low-latency generation and structured extraction.
 
 ---
 
-## 📊 Tracked Personality Traits
+## Tracked Personality Traits
 
-The MVP tracks 8 core behavioral personality traits:
+The baseline system profiles 8 behavioral traits on normalized continuous scales:
 
-| Trait | Domain | Spectrum (Low ↔ High) |
+| Trait Identifier | Domain | Spectrum Anchors (Low / High) |
 | :--- | :--- | :--- |
-| `communication_directness` | Communication | *Diplomatic & Indirect* ↔ *Direct & Blunt* |
-| `curiosity_breadth` | Intellect & Learning | *Specialist Focus* ↔ *Omnivorous Generalist* |
-| `decision_speed` | Decision Making | *Deliberate & Analytical* ↔ *Fast & Instinctive* |
-| `structure_preference` | Work & Lifestyle | *Spontaneous & Fluid* ↔ *Structured & Routine-Driven* |
-| `social_energy` | Social & Energy | *Introverted Focus* ↔ *Extroverted Banter* |
-| `humor_style` | Social & Energy | *Dry & Sarcastic* ↔ *Light & Warmly Playful* |
-| `risk_tolerance` | Disposition | *Risk-Averse / Safe* ↔ *High Risk / Bold Bets* |
-| `stress_composure` | Disposition | *Emotionally Expressive* ↔ *Calm & Solutions-First* |
+| `communication_directness` | Communication | Diplomatic & Indirect / Direct & Unambiguous |
+| `curiosity_breadth` | Intellect & Learning | Focused Specialist / Broad Generalist |
+| `decision_speed` | Decision Making | Deliberate & Analytical / Rapid & Intuitive |
+| `structure_preference` | Work & Lifestyle | Fluid & Spontaneous / Structured & Methodical |
+| `social_energy` | Social & Energy | Solitary & Internally Focused / Extroverted & Interactive |
+| `humor_style` | Social & Energy | Dry & Deadpan / Light & Warm |
+| `risk_tolerance` | Disposition | Risk-Averse & Predictable / High Risk & Exploratory |
+| `stress_composure` | Disposition | Emotionally Expressive / Composed & Solution-Focused |
 
 ---
 
-## 🚀 Quick Start
+## Getting Started
 
-### 1. Prerequisites
+### Prerequisites
+
 - Python 3.11+
-- Docker & Docker Compose
+- Docker and Docker Compose
 - Google Gemini API Key
 
-### 2. Start PostgreSQL
+### 1. Database Initialization
+
+Start the PostgreSQL service:
+
 ```bash
 docker compose up -d
 ```
 
-### 3. Setup Python Environment
+### 2. Environment Setup
+
+Create and activate a virtual environment:
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Configure Environment
-Copy `.env.example` and set your `GEMINI_API_KEY`:
+Configure environment variables:
+
 ```bash
 cp .env.example .env
 ```
-Key variables:
-- `GEMINI_API_KEY`: Your Google Gemini API key.
-- `DEFAULT_CHAT_MODEL`: `gemini-2.5-flash`
-- `DATABASE_URL`: `postgresql+asyncpg://postgres:postgres@localhost:5432/persona_agent`
-- `CHECKPOINTER_DB_URL`: `postgresql://postgres:postgres@localhost:5432/persona_agent`
 
-### 5. Launch the Server
+Ensure the following variables are defined in `.env`:
+
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+DEFAULT_CHAT_MODEL=gemini-3.5-flash-lite
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/persona_agent
+CHECKPOINTER_DB_URL=postgresql://postgres:postgres@localhost:5432/persona_agent
+```
+
+### 3. Running the Application
+
+Start the FastAPI application with Uvicorn:
+
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
-- Interactive API Docs: `http://localhost:8000/docs`
-- Health check: `http://localhost:8000/health`
+
+- API Documentation: `http://localhost:8000/docs`
+- Health Endpoint: `http://localhost:8000/health`
 
 ---
 
-## 📡 API Reference
+## API Reference
 
-| Endpoint | Method | Description |
+| Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `/api/chat/stream` | `POST` | Real-time SSE token stream for a conversation turn. |
-| `/api/chat/message` | `POST` | Standard REST turn execution. |
-| `/api/personas` | `GET` | List available persona archetypes. |
-| `/api/traits` | `GET` | View active trait catalog and scoring anchors. |
-| `/api/profile/{user_id}/traits` | `GET` | View current user trait scores, confidence levels, and observations. |
-| `/api/profile/{user_id}/observations` | `GET` | View raw user quotes and deduction reasoning history. |
-| `/api/threads/{thread_id}/history` | `GET` | Retrieve conversation history from LangGraph checkpointer. |
+| `POST` | `/api/chat/stream` | Server-Sent Events (SSE) token stream for dialogue turns. |
+| `POST` | `/api/chat/message` | Synchronous REST execution for dialogue turns. |
+| `GET` | `/api/personas` | Lists configured persona archetypes and baseline settings. |
+| `GET` | `/api/traits` | Returns the active trait catalog and scoring definitions. |
+| `GET` | `/api/profile/{user_id}/traits` | Returns computed trait scores, confidence levels, and observations. |
+| `GET` | `/api/profile/{user_id}/observations` | Retrieves raw observation history with quote evidence. |
+| `GET` | `/api/threads/{thread_id}/history` | Retrieves conversation history from the checkpointer. |
 
 ---
 
-## 🧪 Testing
+## Verification and Testing
 
-Run automated tests:
+Execute the test suite using pytest:
+
 ```bash
 pytest tests/
 ```
