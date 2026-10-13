@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
+import os
 
 
 class Settings(BaseSettings):
@@ -15,13 +16,16 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/persona_agent"
     CHECKPOINTER_DB_URL: str = "postgresql://postgres:postgres@localhost:5432/persona_agent"
 
-    # API Keys
-    OPENAI_API_KEY: Optional[str] = None
-    ANTHROPIC_API_KEY: Optional[str] = None
+    # Gemini API Key (support both GEMINI_API_KEY and GOOGLE_API_KEY)
+    GEMINI_API_KEY: Optional[str] = None
+    GOOGLE_API_KEY: Optional[str] = None
 
-    # Model defaults
-    DEFAULT_CHAT_MODEL: str = "gpt-4o-mini"
-    DEFAULT_EXTRACTOR_MODEL: str = "gpt-4o-mini"
+    # Default Models
+    DEFAULT_CHAT_MODEL: str = "gemini-2.5-flash"
+    DEFAULT_EXTRACTOR_MODEL: str = "gemini-2.5-flash"
+
+    def get_gemini_key(self) -> Optional[str]:
+        return self.GEMINI_API_KEY or self.GOOGLE_API_KEY or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
 
 
 settings = Settings()

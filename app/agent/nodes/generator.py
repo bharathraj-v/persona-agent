@@ -1,21 +1,20 @@
 from typing import Dict, Any, List
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage, AnyMessage
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from app.config import settings
 from app.agent.state import AgentState
 from app.agent.personas.registry import get_persona
 
 
 def get_llm():
-    """Initializes LLM with fallback support for local testing."""
-    if settings.OPENAI_API_KEY:
-        return ChatOpenAI(
+    """Initializes Google Gemini chat model with fallback support for local testing."""
+    api_key = settings.get_gemini_key()
+    if api_key:
+        return ChatGoogleGenerativeAI(
             model=settings.DEFAULT_CHAT_MODEL,
-            api_key=settings.OPENAI_API_KEY,
-            streaming=True,
+            google_api_key=api_key,
             temperature=0.7
         )
-    # If no API key configured, we provide a mockable fallback or notify
     return None
 
 
@@ -57,7 +56,7 @@ async def generate_persona_response(state: AgentState) -> Dict[str, Any]:
         response = await llm.ainvoke(messages)
         return {"messages": [response]}
     else:
-        # Fallback simulation if OPENAI_API_KEY is not yet populated
+        # Fallback simulation if GEMINI_API_KEY is not yet populated
         last_user_msg = ""
         for m in reversed(messages):
             if isinstance(m, HumanMessage):

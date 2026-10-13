@@ -6,7 +6,7 @@ class ChatMessageRequest(BaseModel):
     message: str = Field(..., description="User's input message")
     user_id: str = Field("user_1", description="Unique user identifier")
     thread_id: str = Field("thread_1", description="Conversation thread identifier")
-    persona_id: str = Field("curious_banter", description="Active persona ID")
+    persona_id: Optional[str] = Field(None, description="Optional forced persona ID. If omitted, LLM decides over the first turns.")
 
 
 class ChatMessageResponse(BaseModel):

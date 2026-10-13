@@ -25,7 +25,8 @@ class TargetedTrait(TypedDict, total=False):
 class AgentState(TypedDict):
     messages: Annotated[List[AnyMessage], add_messages]
     user_id: str
-    persona_id: str
+    persona_id: Optional[str]           # Can start as 'discovery' and be chosen by LLM
+    persona_locked: Optional[bool]      # Once chosen after 2-3 turns, locked to prevent jarring shifts
     thread_id: Optional[str]
     user_style: Optional[DetectedStyle]
     targeted_traits: Optional[List[TargetedTrait]]

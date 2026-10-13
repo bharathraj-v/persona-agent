@@ -5,7 +5,8 @@ from sse_starlette.sse import EventSourceResponse
 from langchain_core.messages import HumanMessage, AIMessage
 from app.api.schemas import ChatMessageRequest, ChatMessageResponse
 from app.agent.graph import graph, get_postgres_graph
-from app.agent.nodes.extractor import run_trait_extraction
+# NOTE: Extractor is intentionally commented out for now to plan triggering strategy
+# from app.agent.nodes.extractor import run_trait_extraction
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -19,7 +20,7 @@ async def send_chat_message(req: ChatMessageRequest, background_tasks: Backgroun
     input_state = {
         "messages": [HumanMessage(content=req.message)],
         "user_id": req.user_id,
-        "persona_id": req.persona_id,
+        "persona_id": req.persona_id or "discovery",
         "thread_id": req.thread_id
     }
 
@@ -28,19 +29,20 @@ async def send_chat_message(req: ChatMessageRequest, background_tasks: Backgroun
     # Extract last AI message
     last_message = result["messages"][-1]
     reply_content = last_message.content if isinstance(last_message, AIMessage) else str(last_message)
+    active_persona = result.get("persona_id", req.persona_id or "discovery")
 
-    # Trigger background trait extraction without blocking the response
-    background_tasks.add_task(
-        run_trait_extraction,
-        user_id=req.user_id,
-        thread_id=req.thread_id,
-        user_message=req.message,
-        ai_response=reply_content
-    )
+    # [COMMENTED OUT FOR NOW]: Extractor triggering intentionally deferred
+    # background_tasks.add_task(
+    #     run_trait_extraction,
+    #     user_id=req.user_id,
+    #     thread_id=req.thread_id,
+    #     user_message=req.message,
+    #     ai_response=reply_content
+    # )
 
     return ChatMessageResponse(
         reply=reply_content,
-        persona_id=req.persona_id,
+        persona_id=active_persona,
         detected_style=result.get("user_style", {}),
         targeted_traits=result.get("targeted_traits", []),
         thread_id=req.thread_id
@@ -56,12 +58,13 @@ async def stream_chat_message(req: ChatMessageRequest, background_tasks: Backgro
     input_state = {
         "messages": [HumanMessage(content=req.message)],
         "user_id": req.user_id,
-        "persona_id": req.persona_id,
+        "persona_id": req.persona_id or "discovery",
         "thread_id": req.thread_id
     }
 
     async def event_generator():
         accumulated_text = []
+        resolved_persona = req.persona_id or "discovery"
         try:
             async for event in agent_graph.astream_events(input_state, config, version="v2"):
                 event_type = event.get("event")
@@ -75,29 +78,36 @@ async def stream_chat_message(req: ChatMessageRequest, background_tasks: Backgro
                             "data": json.dumps({"token": chunk.content})
                         }
                 elif event_type == "on_chain_end" and event.get("name") == "style_analyzer":
-                    # Send detected style event
                     data = event.get("data", {}).get("output", {})
                     yield {
                         "event": "style",
                         "data": json.dumps(data.get("user_style", {}))
                     }
+                elif event_type == "on_chain_end" and event.get("name") == "persona_selector":
+                    data = event.get("data", {}).get("output", {})
+                    if "persona_id" in data:
+                        resolved_persona = data["persona_id"]
+                        yield {
+                            "event": "persona",
+                            "data": json.dumps({"persona_id": resolved_persona, "locked": data.get("persona_locked", False)})
+                        }
 
             full_reply = "".join(accumulated_text)
             yield {
                 "event": "done",
-                "data": json.dumps({"thread_id": req.thread_id, "done": True})
+                "data": json.dumps({"thread_id": req.thread_id, "persona_id": resolved_persona, "done": True})
             }
 
-            # Queue background extraction
-            if full_reply:
-                asyncio.create_task(
-                    run_trait_extraction(
-                        user_id=req.user_id,
-                        thread_id=req.thread_id,
-                        user_message=req.message,
-                        ai_response=full_reply
-                    )
-                )
+            # [COMMENTED OUT FOR NOW]: Extractor triggering intentionally deferred
+            # if full_reply:
+            #     asyncio.create_task(
+            #         run_trait_extraction(
+            #             user_id=req.user_id,
+            #             thread_id=req.thread_id,
+            #             user_message=req.message,
+            #             ai_response=full_reply
+            #         )
+            #     )
         except Exception as e:
             yield {
                 "event": "error",

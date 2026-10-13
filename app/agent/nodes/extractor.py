@@ -2,7 +2,7 @@ import datetime
 from typing import List, Dict, Any, Optional
 from sqlalchemy import select
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from app.config import settings
 from app.agent.state import AgentState
 from app.agent.traits.schema import TurnExtractionResult
@@ -37,14 +37,14 @@ def _format_rubrics() -> str:
 
 async def run_trait_extraction(user_id: str, thread_id: Optional[str], user_message: str, ai_response: str) -> TurnExtractionResult:
     """Analyzes a single user-AI exchange for trait signals and persists observations to PostgreSQL."""
-    if not settings.OPENAI_API_KEY:
-        # Mock/Rule-based sample extraction for local testing without active API key
+    api_key = settings.get_gemini_key()
+    if not api_key:
         return TurnExtractionResult(observations=[])
 
     try:
-        llm = ChatOpenAI(
+        llm = ChatGoogleGenerativeAI(
             model=settings.DEFAULT_EXTRACTOR_MODEL,
-            api_key=settings.OPENAI_API_KEY,
+            google_api_key=api_key,
             temperature=0.0
         )
         extractor = llm.with_structured_output(TurnExtractionResult)

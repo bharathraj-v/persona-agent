@@ -4,22 +4,25 @@ from langgraph.checkpoint.memory import MemorySaver
 from app.config import settings
 from app.agent.state import AgentState
 from app.agent.nodes.style_analyzer import analyze_user_style
+from app.agent.nodes.persona_selector import select_persona
 from app.agent.nodes.elicitation import select_elicitation_target
 from app.agent.nodes.generator import generate_persona_response
 
 
 def build_persona_graph(checkpointer=None):
-    """Constructs the persona agent state graph with style adaptation and elicitation."""
+    """Constructs the persona agent state graph with style adaptation, LLM persona selection, and elicitation."""
     builder = StateGraph(AgentState)
 
     # Add Nodes
     builder.add_node("style_analyzer", analyze_user_style)
+    builder.add_node("persona_selector", select_persona)
     builder.add_node("elicitation_selector", select_elicitation_target)
     builder.add_node("generator", generate_persona_response)
 
     # Add Edges
     builder.add_edge(START, "style_analyzer")
-    builder.add_edge("style_analyzer", "elicitation_selector")
+    builder.add_edge("style_analyzer", "persona_selector")
+    builder.add_edge("persona_selector", "elicitation_selector")
     builder.add_edge("elicitation_selector", "generator")
     builder.add_edge("generator", END)
 
