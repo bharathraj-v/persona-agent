@@ -4,17 +4,11 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Send,
   RotateCcw,
-  SlidersHorizontal,
-  MessageSquare,
   Compass,
-  Sparkles,
-  PanelLeft,
 } from "lucide-react";
-import { ChatMessage, DetectedStyle, PersonaInfo, TraitScore, TraitInsight, ChatSession } from "./types";
-import { TraitsModal } from "./traits-modal";
-import { LiveInsightsPanel } from "./live-insights-panel";
+import { ChatMessage, TraitScore, TraitInsight, ChatSession } from "./types";
+import { SignalsDrawer } from "./signals-drawer";
 import { ChatSessionsSidebar } from "./chat-sessions-sidebar";
-import { Badge } from "@/components/ui/badge";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -25,68 +19,27 @@ import {
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-const DEFAULT_PERSONAS: Record<string, PersonaInfo> = {
-  discovery: {
-    id: "discovery",
-    name: "Nova",
-    avatar: "✨",
-    tagline: "Adaptive companion discovering your vibe",
-  },
-  curious_banter: {
-    id: "curious_banter",
-    name: "Leo",
-    avatar: "⚡",
-    tagline: "Witty, quick, and observant friend",
-  },
-  pragmatic_mentor: {
-    id: "pragmatic_mentor",
-    name: "Marcus",
-    avatar: "🧭",
-    tagline: "Grounded, calm, and candid mentor",
-  },
-  empathetic_confidant: {
-    id: "empathetic_confidant",
-    name: "Maya",
-    avatar: "🌿",
-    tagline: "Warm, intuitive, and attentive listener",
-  },
-  analytical_challenger: {
-    id: "analytical_challenger",
-    name: "Zane",
-    avatar: "🎯",
-    tagline: "Sharp intellectual sparring partner",
-  },
-};
+const createThreadId = () => "thread_" + Math.random().toString(36).substring(2, 9);
 
-const STARTER_PROMPTS = [
-  "Free weekend: do you plan out every detail or just wing it?",
-  "Honestly, I hate when people are passive-aggressive at work.",
-  "I'm weighing a safe corporate job against a chaotic startup — thoughts?",
-  "Late nights with ideas or early morning routine? What's your vibe?",
-];
+const PERSONA_TYPES: Record<string, string> = {
+  curious_banter: "curious banter",
+  pragmatic_mentor: "pragmatic mentor",
+  empathetic_confidant: "empathetic confidant",
+  analytical_challenger: "analytical challenger",
+};
 
 // ─── Components ───────────────────────────────────────────────────────────────
 
-function PersonaPill({
-  persona,
-  locked,
-}: {
-  persona: PersonaInfo;
-  locked: boolean;
-}) {
+function PersonaPill({ personaId, locked }: { personaId: string; locked: boolean }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/8 bg-white/4 backdrop-blur-sm text-xs transition-all">
-      <span className="text-base leading-none">{persona.avatar}</span>
-      <span className="font-medium text-zinc-200">{persona.name}</span>
+    <div className="flex items-center gap-2 text-xs">
+      <span className="font-medium text-[var(--foreground)]">Aura</span>
       {locked ? (
-        <Badge
-          variant="outline"
-          className="text-[10px] px-1.5 py-0 h-4 border-emerald-500/40 text-emerald-400 bg-emerald-500/10 font-mono"
-        >
-          locked
-        </Badge>
+        <span className="rounded-full border border-[var(--moss)]/40 bg-[var(--moss)]/10 px-2 py-1 text-[10px] text-[var(--moss)]">
+          Type · {PERSONA_TYPES[personaId] ?? "adaptive"}
+        </span>
       ) : (
-        <span className="text-zinc-500 text-[11px]">discovering…</span>
+        <span className="text-[10px] text-[var(--muted-foreground)]">listening</span>
       )}
     </div>
   );
@@ -95,16 +48,16 @@ function PersonaPill({
 function StatusDot({ online }: { online: boolean | null }) {
   const color =
     online === true
-      ? "bg-emerald-400"
+      ? "bg-[var(--moss)]"
       : online === false
-      ? "bg-red-500"
-      : "bg-amber-400";
+      ? "bg-[var(--destructive)]"
+      : "bg-[var(--gold)]";
   const label =
     online === true ? "API online" : online === false ? "API offline" : "Checking…";
   return (
     <Tooltip>
       <TooltipTrigger
-        className="cursor-default flex items-center justify-center size-7 rounded-lg hover:bg-white/5 transition-colors"
+        className="flex size-7 cursor-default items-center justify-center rounded-full transition-colors hover:bg-[var(--muted)]"
       >
         <span className={`size-2 rounded-full ${color} ${online ? "animate-pulse" : ""}`} />
       </TooltipTrigger>
@@ -116,30 +69,7 @@ function StatusDot({ online }: { online: boolean | null }) {
 }
 
 function StreamingCursor() {
-  return (
-    <span className="inline-block w-0.5 h-4 bg-indigo-400 ml-0.5 rounded-full animate-pulse align-middle" />
-  );
-}
-
-function TypingIndicator({ persona }: { persona: PersonaInfo }) {
-  return (
-    <div className="flex gap-3 items-end animate-in fade-in duration-200">
-      <div className="size-8 shrink-0 rounded-xl bg-zinc-900/80 border border-white/8 flex items-center justify-center text-sm shadow-sm">
-        {persona.avatar}
-      </div>
-      <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-zinc-900/60 border border-white/6 shadow-sm">
-        <div className="flex gap-1.5 items-center h-4">
-          {[0, 150, 300].map((delay) => (
-            <span
-              key={delay}
-              className="size-1.5 rounded-full bg-zinc-500 animate-bounce"
-              style={{ animationDelay: `${delay}ms`, animationDuration: "1s" }}
-            />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+  return <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse rounded-full bg-[var(--primary)] align-middle" />;
 }
 
 // ─── Main Interface ───────────────────────────────────────────────────────────
@@ -153,13 +83,12 @@ export function ChatInterface() {
   const [activePersonaId, setActivePersonaId] = useState("discovery");
   const [personaLocked, setPersonaLocked] = useState(false);
   const [serverOnline, setServerOnline] = useState<boolean | null>(null);
-  const [isTraitsModalOpen, setIsTraitsModalOpen] = useState(false);
   const [isInsightsOpen, setIsInsightsOpen] = useState(true);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
 
   // Chat Sessions History State
   const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // Live Personality Trait State
   const [liveTraits, setLiveTraits] = useState<TraitScore[]>([]);
@@ -173,6 +102,7 @@ export function ChatInterface() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const messageSequenceRef = useRef(0);
 
   const checkHealth = useCallback(async () => {
     try {
@@ -208,7 +138,9 @@ export function ChatInterface() {
   }, [userId]);
 
   useEffect(() => {
-    setThreadId("thread_" + Math.random().toString(36).substring(2, 9));
+    // These calls synchronize the UI with the remote chat/profile services on mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setThreadId(createThreadId());
     checkHealth();
     loadInitialTraits();
     loadSessions();
@@ -219,7 +151,7 @@ export function ChatInterface() {
   }, [messages, isStreaming]);
 
   const handleResetSession = () => {
-    setThreadId("thread_" + Math.random().toString(36).substring(2, 9));
+    setThreadId(createThreadId());
     setMessages([]);
     setActivePersonaId("discovery");
     setPersonaLocked(false);
@@ -235,7 +167,13 @@ export function ChatInterface() {
       const res = await fetch(`${BACKEND_URL}/api/chat/sessions/${selectedThreadId}/messages`);
       if (res.ok) {
         const data = await res.json();
-        const formatted: ChatMessage[] = (data.messages || []).map((m: any) => ({
+        const formatted: ChatMessage[] = (data.messages || []).map((m: {
+          id: string;
+          role: "user" | "assistant";
+          content: string;
+          created_at?: string;
+          persona_id?: string;
+        }) => ({
           id: m.id,
           role: m.role as "user" | "assistant",
           content: m.content,
@@ -303,13 +241,13 @@ export function ChatInterface() {
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
     const userMessage: ChatMessage = {
-      id: "usr_" + Date.now(),
+      id: `usr_${messageSequenceRef.current++}`,
       role: "user",
       content: text,
       timestamp: new Date(),
     };
 
-    const asstId = "ast_" + Date.now();
+    const asstId = `ast_${messageSequenceRef.current++}`;
     const assistantMessage: ChatMessage = {
       id: asstId,
       role: "assistant",
@@ -483,203 +421,130 @@ export function ChatInterface() {
     }
   };
 
-  const currentPersona = DEFAULT_PERSONAS[activePersonaId] ?? DEFAULT_PERSONAS["discovery"];
   const exploredTraitsCount = liveTraits.filter((t) => (t.observation_count || 0) > 0 || (t.confidence || 0) > 0).length;
 
   return (
-    <div className="flex h-screen w-full flex-col bg-[#09090f] text-zinc-100 font-sans antialiased overflow-hidden">
-      {/* ── Header ────────────────────────────────────────────────────── */}
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/6 bg-[#09090f]/90 px-4 md:px-6 backdrop-blur-md z-10">
-        {/* Left: Sidebar Toggle + Logo */}
-        <div className="flex items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger
-              id="toggle-sidebar-btn"
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className={`flex size-8 items-center justify-center rounded-lg border transition-all ${
-                isSidebarOpen
-                  ? "bg-indigo-600/20 border-indigo-500/40 text-indigo-300"
-                  : "bg-white/4 border-white/6 text-zinc-400 hover:text-zinc-100 hover:bg-white/8"
-              }`}
-            >
-              <PanelLeft className="size-4" />
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              {isSidebarOpen ? "Close history" : "Chat history"}
-            </TooltipContent>
-          </Tooltip>
-
-          <div className="flex items-center gap-2.5">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-tr from-indigo-600 to-violet-500 font-bold text-sm text-white shadow-lg shadow-indigo-500/20">
-              A
-            </div>
-            <div className="hidden sm:flex flex-col">
-              <span className="text-sm font-semibold tracking-tight text-zinc-100 leading-none">
-                Aura<span className="text-indigo-400">·</span>Agent
-              </span>
-              <span className="text-[10px] text-zinc-500 font-medium">personality profiler</span>
-            </div>
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-[var(--background)] font-sans text-[var(--foreground)] antialiased">
+      <header className="z-10 flex h-16 shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--background)]/90 px-4 backdrop-blur-md md:px-7">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <div className="aura-mark" aria-hidden="true" />
+            <span className="font-serif text-lg tracking-[-0.04em]">Aura</span>
           </div>
         </div>
 
+        <PersonaPill personaId={activePersonaId} locked={personaLocked} />
 
-        {/* Active Persona Pill — center */}
-        <PersonaPill persona={currentPersona} locked={personaLocked} />
-
-        {/* Right actions */}
         <div className="flex items-center gap-1.5">
           <StatusDot online={serverOnline} />
-
-          {/* Toggle Live Insights Panel */}
           <button
             id="toggle-insights-btn"
             onClick={() => setIsInsightsOpen(!isInsightsOpen)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+            aria-pressed={isInsightsOpen}
+            className={`flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-medium transition-colors ${
               isInsightsOpen
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
-                : "text-zinc-300 hover:text-white bg-white/4 hover:bg-white/8 border border-white/6"
+                ? "border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)]"
+                : "border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
             }`}
-            title="Toggle Live Personality Map"
+            title="Open signals"
           >
             <Compass className="size-3.5" />
-            <span className="hidden sm:inline">Map</span>
-            <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-black/30">
-              {exploredTraitsCount}/8
-            </span>
+            <span className="hidden sm:inline">Signals</span>
+            <span className="text-[10px] opacity-70">{exploredTraitsCount}/8</span>
           </button>
-
-          <Tooltip>
-            <TooltipTrigger
-              id="traits-profile-btn"
-              onClick={() => setIsTraitsModalOpen(true)}
-              className="flex size-7 items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-white/6 transition-colors"
-            >
-              <SlidersHorizontal className="size-4" />
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              Full Profile Rubrics
-            </TooltipContent>
-          </Tooltip>
 
           <Tooltip>
             <TooltipTrigger
               id="reset-session-btn"
               onClick={handleResetSession}
-              className="flex size-7 items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-white/6 transition-colors"
+              className="flex size-9 items-center justify-center rounded-full border border-transparent text-[var(--muted-foreground)] transition-colors hover:border-[var(--border)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
             >
               <RotateCcw className="size-4" />
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              New session
-            </TooltipContent>
+            <TooltipContent side="bottom" className="text-xs">New chat</TooltipContent>
           </Tooltip>
         </div>
       </header>
 
-      {/* ── Live Insight Toast Notification Banner ─────────────────────── */}
       {toastInsight && (
-        <div className="sticky top-14 z-20 mx-auto w-full max-w-xl px-4 pt-2 animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-indigo-500/30 bg-indigo-950/80 backdrop-blur-md text-xs text-indigo-200 shadow-xl">
-            <div className="flex items-center gap-2 truncate">
-              <Sparkles className="size-3.5 text-indigo-400 shrink-0" />
+        <div className="signal-in sticky top-16 z-20 mx-auto w-full max-w-2xl px-4 pt-3">
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--primary)]/30 bg-[var(--surface-strong)] px-3 py-2.5 text-xs shadow-[0_8px_24px_rgba(48,40,30,0.08)]">
+            <div className="flex min-w-0 items-center gap-2 truncate">
+              <span className="size-2 shrink-0 rounded-full bg-[var(--primary)]" />
               <span className="truncate">
-                New insight: <strong className="text-white font-medium">{toastInsight.name}</strong> ({toastInsight.score.toFixed(1)}/7)
+                New signal: <strong className="font-semibold">{toastInsight.name}</strong>
               </span>
             </div>
             <button
               onClick={() => setIsInsightsOpen(true)}
-              className="text-[11px] underline text-indigo-300 hover:text-white shrink-0 font-medium"
+              className="shrink-0 text-[11px] font-semibold text-[var(--primary)] hover:underline"
             >
-              View Map →
+              Open signals
             </button>
           </div>
         </div>
       )}
 
-      {/* ── Message list ──────────────────────────────────────────────── */}
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="mx-auto max-w-2xl px-4 py-8 space-y-5">
+      <div className="min-h-0 flex-1 lg:flex">
+      <ChatSessionsSidebar
+        isOpen={isSidebarOpen}
+        onOpen={() => setIsSidebarOpen(true)}
+        onClose={() => setIsSidebarOpen(false)}
+        sessions={sessions}
+        currentSessionId={threadId}
+        onSelectSession={handleSelectSession}
+        onNewChat={handleResetSession}
+        onDeleteSession={handleDeleteSession}
+        onResetProfile={handleResetProfile}
+        userId={userId}
+      />
+
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="mx-auto max-w-3xl px-4 py-8 md:px-8 md:py-12">
           {messages.length === 0 ? (
-            /* Empty state */
-            <div className="flex flex-col items-center justify-center pt-16 text-center space-y-6">
-              <div className="size-16 rounded-2xl bg-gradient-to-tr from-indigo-500/20 via-violet-500/20 to-emerald-500/20 border border-indigo-500/30 flex items-center justify-center text-3xl shadow-xl shadow-indigo-500/10">
-                ✨
+            <div className="flex flex-col items-center justify-center pt-24 text-center md:pt-32">
+              <div className="mb-7 flex size-20 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)]">
+                <div className="aura-mark scale-125" aria-hidden="true" />
               </div>
-              <div className="space-y-2 max-w-sm">
-                <h2 className="text-lg font-semibold text-zinc-100">
-                  Meet Aura
-                </h2>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Talk naturally about your day, how you make decisions, or what matters to you.
-                  Aura adapts its vibe to yours while continuously mapping your authentic personality.
-                </p>
-              </div>
-              {/* Starter prompts */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-lg text-left">
-                {STARTER_PROMPTS.map((prompt, idx) => (
-                  <button
-                    key={idx}
-                    id={`starter-prompt-${idx}`}
-                    onClick={() => handleSendMessage(prompt)}
-                    className="group p-3 rounded-xl border border-white/6 bg-white/3 hover:bg-white/6 hover:border-white/10 text-xs text-zinc-400 hover:text-zinc-200 transition-all text-left flex items-start gap-2"
-                  >
-                    <MessageSquare className="size-3.5 shrink-0 mt-0.5 text-zinc-600 group-hover:text-indigo-400 transition-colors" />
-                    <span>{prompt}</span>
-                  </button>
-                ))}
-              </div>
+              <h1 className="font-serif text-4xl tracking-[-0.045em] md:text-5xl">Hello, I’m Aura.</h1>
+              <p className="mt-3 text-sm text-[var(--muted-foreground)]">What’s on your mind?</p>
             </div>
           ) : (
-            /* Messages */
-            <>
-              {messages.map((message) => {
+            <div>
+              {messages.map((message, index) => {
                 const isUser = message.role === "user";
-                const persona = message.personaId
-                  ? DEFAULT_PERSONAS[message.personaId]
-                  : currentPersona;
                 const isCurrentlyStreaming =
                   message.isStreaming && message.id === streamingMessageId;
+                const previousMessage = messages[index - 1];
+                const isGrouped = previousMessage?.role === message.role;
 
                 return (
                   <div
                     key={message.id}
-                    className={`flex gap-3 items-end ${
-                      isUser ? "justify-end" : "justify-start"
-                    }`}
+                    className={`flex items-end gap-3 ${
+                      isGrouped ? "mt-1" : "mt-7 first:mt-0"
+                    } ${isUser ? "justify-end" : "justify-start"}`}
                   >
-                    {/* Assistant avatar */}
                     {!isUser && (
-                      <div
-                        className="size-8 shrink-0 rounded-xl bg-zinc-900/80 border border-white/8 flex items-center justify-center text-sm shadow-sm"
-                        title={persona?.name}
-                      >
-                        {persona?.avatar ?? "✨"}
-                      </div>
+                      isGrouped ? <div className="w-8 shrink-0" /> : <div className="aura-mark shrink-0" aria-hidden="true" />
                     )}
 
-                    {/* Bubble */}
-                    <div
-                      className={`max-w-[85%] sm:max-w-[75%] space-y-1 ${
-                        isUser ? "items-end" : "items-start"
-                      }`}
-                    >
+                    <div className={`max-w-[88%] space-y-1 sm:max-w-[76%] ${isUser ? "items-end" : "items-start"}`}>
                       <div
-                        className={`rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
+                        className={`px-4 py-3 text-sm leading-relaxed ${
                           isUser
-                            ? "bg-indigo-600 text-white rounded-br-sm"
-                            : "bg-zinc-900/80 border border-white/6 text-zinc-100 rounded-bl-sm"
+                            ? "rounded-2xl rounded-br-md bg-[var(--primary)] text-[var(--primary-foreground)]"
+                            : "rounded-2xl rounded-bl-md border border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)]"
                         }`}
                       >
                         {isCurrentlyStreaming && !message.content ? (
-                          <div className="flex gap-1.5 items-center h-4">
+                          <div className="flex h-4 items-center gap-1.5">
                             {[0, 150, 300].map((delay) => (
                               <span
                                 key={delay}
-                                className="size-1.5 rounded-full bg-zinc-500 animate-bounce"
-                                style={{
-                                  animationDelay: `${delay}ms`,
-                                  animationDuration: "1s",
-                                }}
+                                className="size-1.5 animate-bounce rounded-full bg-[var(--muted-foreground)]"
+                                style={{ animationDelay: `${delay}ms`, animationDuration: "1s" }}
                               />
                             ))}
                           </div>
@@ -690,44 +555,29 @@ export function ChatInterface() {
                           </p>
                         )}
                       </div>
-
-                      {/* Timestamp */}
-                      <div
-                        className={`text-[10px] text-zinc-600 px-1 ${
-                          isUser ? "text-right" : "text-left"
-                        }`}
-                      >
-                        {message.timestamp.toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </div>
+                      {!isGrouped && (
+                        <div className={`px-1 text-[10px] text-[var(--muted-foreground)] ${isUser ? "text-right" : "text-left"}`}>
+                          {message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </div>
+                      )}
                     </div>
-
-                    {/* User avatar */}
-                    {isUser && (
-                      <div className="size-8 shrink-0 rounded-xl bg-indigo-950/80 border border-indigo-800/40 flex items-center justify-center text-xs font-semibold text-indigo-300">
-                        U
-                      </div>
-                    )}
                   </div>
                 );
               })}
               <div ref={messagesEndRef} />
-            </>
+            </div>
           )}
           {messages.length === 0 && <div ref={messagesEndRef} />}
         </div>
       </ScrollArea>
 
-      {/* ── Input area ────────────────────────────────────────────────── */}
-      <div className="border-t border-white/6 bg-[#09090f]/90 px-4 pb-5 pt-3 md:px-6">
-        <div className="mx-auto max-w-2xl">
+      <div className="border-t border-[var(--border)] bg-[var(--background)]/90 px-4 pb-5 pt-3 backdrop-blur-md md:px-6">
+        <div className="mx-auto max-w-3xl">
           <div
-            className={`relative flex items-end gap-2 rounded-2xl border bg-zinc-900/50 p-2 shadow-xl transition-all duration-200 ${
+            className={`relative flex items-end gap-2 rounded-2xl border bg-[var(--surface-strong)] p-2 transition-all duration-200 ${
               isStreaming
-                ? "border-indigo-500/30 ring-1 ring-indigo-500/20"
-                : "border-white/8 focus-within:border-white/14 focus-within:ring-1 focus-within:ring-white/10"
+                ? "border-[var(--primary)]/50 ring-2 ring-[var(--primary)]/10"
+                : "border-[var(--border)] focus-within:border-[var(--primary)]/60 focus-within:ring-2 focus-within:ring-[var(--primary)]/10"
             }`}
           >
             <textarea
@@ -742,58 +592,36 @@ export function ChatInterface() {
               }}
               onKeyDown={handleKeyDown}
               disabled={isStreaming}
-              placeholder={
-                isStreaming
-                  ? `${currentPersona.name} is responding…`
-                  : "Message Aura… (Enter to send)"
-              }
-              className="flex-1 max-h-40 resize-none bg-transparent px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+              placeholder={isStreaming ? "Aura is responding…" : "Say something to Aura…"}
+              className="max-h-40 flex-1 resize-none bg-transparent px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
             />
             <button
               id="send-message-btn"
               onClick={() => handleSendMessage()}
               disabled={!input.trim() || isStreaming}
-              className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 disabled:bg-zinc-800 text-white disabled:text-zinc-600 transition-all shadow-md shadow-indigo-900/30"
+              aria-label="Send message"
+              className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] transition-transform hover:brightness-105 active:scale-95 disabled:bg-[var(--muted)] disabled:text-[var(--muted-foreground)]"
             >
               <Send className="size-4" />
             </button>
           </div>
-          <p className="text-[11px] text-zinc-600 text-center mt-2">
-            Aura Profiler · Enter to send · Shift+Enter for newline
+          <p className="mt-2 text-center text-[10px] text-[var(--muted-foreground)]">
+            Enter to send · Shift + Enter for a new line
           </p>
         </div>
       </div>
 
-      {/* ── Chat Sessions Left Sidebar ─────────────────────────────── */}
-      <ChatSessionsSidebar
-        isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
-        sessions={sessions}
-        currentSessionId={threadId}
-        onSelectSession={handleSelectSession}
-        onNewChat={handleResetSession}
-        onDeleteSession={handleDeleteSession}
-        onResetProfile={handleResetProfile}
-        userId={userId}
-      />
+      </main>
 
-      {/* ── Live Personality Insights Panel (Slide-out) ───────────────── */}
-      <LiveInsightsPanel
+      <SignalsDrawer
         isOpen={isInsightsOpen}
         onClose={() => setIsInsightsOpen(false)}
+        onRefresh={loadInitialTraits}
         traits={liveTraits}
         latestInsight={latestInsight}
         currentTargetTrait={currentTargetTrait}
       />
-
-      {/* ── Full Rubrics Modal ────────────────────────────────────────── */}
-      <TraitsModal
-        isOpen={isTraitsModalOpen}
-        onClose={() => setIsTraitsModalOpen(false)}
-        userId={userId}
-        apiUrl={BACKEND_URL}
-      />
+      </div>
     </div>
   );
 }
-
