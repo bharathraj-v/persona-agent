@@ -1,6 +1,29 @@
-# Aura · Personality & Vibe Profiling Agent
+<div align="center">
+  <img src="docs/aura-mark.svg" width="112" alt="Aura mark" />
+  <h1>Aura</h1>
+  <p><strong>Personality &amp; Vibe Profiling Agent</strong></p>
+  <p>An emotionally intelligent, adaptive AI companion that maps the contours of how you think, speak, and move through the world.</p>
+  <p>
+    <code>LangGraph</code>&nbsp;&nbsp;·&nbsp;&nbsp;<code>FastAPI</code>&nbsp;&nbsp;·&nbsp;&nbsp;<code>PostgreSQL</code>
+  </p>
+</div>
 
-> An emotionally intelligent, adaptive AI companion implemented with **LangGraph**, **FastAPI**, **Google Gemini**, and **PostgreSQL**. Aura naturally engages users in dialogue, aligns with their communication vibe, and systematically maps their authentic personality traits in real time.
+<br />
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" width="25%"><strong>Listen</strong><br /><sub>Find the signal in natural conversation</sub></td>
+      <td align="center" width="25%"><strong>Adapt</strong><br /><sub>Meet your communication vibe</sub></td>
+      <td align="center" width="25%"><strong>Explore</strong><br /><sub>Ask better questions, gently</sub></td>
+      <td align="center" width="25%"><strong>Remember</strong><br /><sub>Build a living profile over time</sub></td>
+    </tr>
+  </table>
+</div>
+
+<br />
+
+> Aura naturally engages users in dialogue, aligns with their communication vibe, and systematically maps their authentic personality traits in real time.
 
 ---
 
@@ -14,9 +37,28 @@ Rather than subjecting users to sterile psychological surveys or clinical questi
 - **Directional Trait Elicitation**: Subtly weaves everyday scenarios and dilemmas into the flow of dialogue without ever using psychological jargon.
 - **Subagent Profiling & Live Map**: An internal profiling subagent derives concrete behavioral observations from your statements, calculates Bayesian confidence scores, and updates your live Personality Map in the UI as the chat progresses.
 
+<div align="center">
+  <sub><em>A quiet conversation in. A sharper sense of self out.</em></sub>
+</div>
+
+## The Aura experience
+
+Aura is intentionally built around a simple feeling: the interface should recede while the conversation gets more perceptive.
+
+| Conversation | Profile | Memory | Delivery |
+| :---: | :---: | :---: | :---: |
+| Natural, low-pressure dialogue | Directional trait signals | Evidence-backed observations | Token-by-token SSE streaming |
+
+<p align="center">
+  <img src="docs/aura-loop.svg" alt="Aura conversational loop: listen, adapt, explore, remember" width="100%" />
+</p>
+
 ---
 
 ## The 4-Stage Conversational Loop
+
+<details>
+<summary>Open the technical flow</summary>
 
 ```mermaid
 flowchart TD
@@ -37,6 +79,8 @@ flowchart TD
     SAVE --> END([END])
     KEEP --> END([END])
 ```
+
+</details>
 
 ### Stage Breakdown:
 1. **Stage 1 (Personality Alignment & Modality Handoff)**: Aura begins in discovery mode (Nova). During turns 1–3, Aura assesses user style. If a distinct style matches an archetype (Leo, Marcus, Maya, Zane), Aura invokes the tool `switch_persona` to lock that modality.

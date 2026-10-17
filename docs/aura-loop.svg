@@ -1,0 +1,45 @@
+<svg width="1200" height="300" viewBox="0 0 1200 300" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Aura conversational loop</title>
+  <desc id="desc">Four connected stages: listen, adapt, explore, and remember.</desc>
+  <rect width="1200" height="300" rx="28" fill="#171817"/>
+  <rect x="1" y="1" width="1198" height="298" rx="27" stroke="#F2EEE5" stroke-opacity="0.12" stroke-width="2"/>
+
+  <path d="M255 150H335" stroke="#E4775B" stroke-width="3" stroke-linecap="round"/>
+  <path d="M325 140L337 150L325 160" stroke="#E4775B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M555 150H635" stroke="#E7C15A" stroke-width="3" stroke-linecap="round"/>
+  <path d="M625 140L637 150L625 160" stroke="#E7C15A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M855 150H935" stroke="#A8C58F" stroke-width="3" stroke-linecap="round"/>
+  <path d="M925 140L937 150L925 160" stroke="#A8C58F" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g>
+    <rect x="40" y="73" width="215" height="154" rx="20" fill="#242622"/>
+    <circle cx="75" cy="111" r="15" fill="#E4775B" fill-opacity="0.18" stroke="#E4775B"/>
+    <path d="M68 111H82M75 104V118" stroke="#E4775B" stroke-width="2" stroke-linecap="round"/>
+    <text x="65" y="157" fill="#F2EEE5" font-family="Arial, sans-serif" font-size="21" font-weight="700">01  Listen</text>
+    <text x="65" y="184" fill="#AAA79E" font-family="Arial, sans-serif" font-size="14">Style + signal detection</text>
+  </g>
+
+  <g>
+    <rect x="340" y="73" width="215" height="154" rx="20" fill="#242622"/>
+    <circle cx="375" cy="111" r="15" fill="#E7C15A" fill-opacity="0.18" stroke="#E7C15A"/>
+    <path d="M369 111C369 107.7 371.7 105 375 105C378.3 105 381 107.7 381 111C381 114.3 378.3 117 375 117C371.7 117 369 114.3 369 111Z" stroke="#E7C15A" stroke-width="2"/>
+    <text x="365" y="157" fill="#F2EEE5" font-family="Arial, sans-serif" font-size="21" font-weight="700">02  Adapt</text>
+    <text x="365" y="184" fill="#AAA79E" font-family="Arial, sans-serif" font-size="14">Tone + modality handoff</text>
+  </g>
+
+  <g>
+    <rect x="640" y="73" width="215" height="154" rx="20" fill="#242622"/>
+    <circle cx="675" cy="111" r="15" fill="#A8C58F" fill-opacity="0.18" stroke="#A8C58F"/>
+    <path d="M668 112L674 118L683 106" stroke="#A8C58F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="665" y="157" fill="#F2EEE5" font-family="Arial, sans-serif" font-size="21" font-weight="700">03  Explore</text>
+    <text x="665" y="184" fill="#AAA79E" font-family="Arial, sans-serif" font-size="14">Natural trait elicitation</text>
+  </g>
+
+  <g>
+    <rect x="940" y="73" width="215" height="154" rx="20" fill="#242622"/>
+    <circle cx="975" cy="111" r="15" fill="#E4775B" fill-opacity="0.18" stroke="#E4775B"/>
+    <path d="M968 111C968 107 971 104 975 104C979 104 982 107 982 111C982 115 979 118 975 118C971 118 968 115 968 111Z" stroke="#E4775B" stroke-width="2"/>
+    <text x="965" y="157" fill="#F2EEE5" font-family="Arial, sans-serif" font-size="21" font-weight="700">04  Remember</text>
+    <text x="965" y="184" fill="#AAA79E" font-family="Arial, sans-serif" font-size="14">Profile + evidence memory</text>
+  </g>
+</svg>
