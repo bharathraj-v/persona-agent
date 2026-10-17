@@ -1,0 +1,9 @@
+<svg width="240" height="240" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Aura mark</title>
+  <desc id="desc">Two overlapping elliptical lines forming a quiet orbit.</desc>
+  <rect width="240" height="240" rx="56" fill="#171817"/>
+  <rect x="1" y="1" width="238" height="238" rx="55" stroke="#F2EEE5" stroke-opacity="0.12" stroke-width="2"/>
+  <ellipse cx="120" cy="120" rx="72" ry="38" transform="rotate(-28 120 120)" stroke="#E4775B" stroke-width="7"/>
+  <ellipse cx="120" cy="120" rx="38" ry="72" transform="rotate(-28 120 120)" stroke="#E7C15A" stroke-opacity="0.82" stroke-width="7"/>
+  <circle cx="120" cy="120" r="9" fill="#F2EEE5"/>
+</svg>
