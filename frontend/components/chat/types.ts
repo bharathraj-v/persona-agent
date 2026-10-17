@@ -52,3 +52,13 @@ export interface TraitInsight {
   scale_min: number;
   scale_max: number;
 }
+
+export interface ChatSession {
+  thread_id: string;
+  title: string;
+  last_message: string;
+  last_activity: string | null;
+  message_count: number;
+  persona_id: string;
+}
+

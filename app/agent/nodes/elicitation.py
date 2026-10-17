@@ -14,8 +14,13 @@ async def select_elicitation_target(state: AgentState) -> Dict[str, Any]:
     """Manages Stage 2 of the personality loop: selects and targets a low-confidence trait to explore."""
     user_id = state.get("user_id", "default_user")
     current_target = state.get("current_target_trait")
+    if isinstance(current_target, str):
+        current_target = next((t for t in SEED_TRAITS if t["id"] == current_target), None)
+    elif not isinstance(current_target, dict):
+        current_target = None
     turns_count = state.get("trait_turns_count", 0)
     was_just_extracted = bool(state.get("latest_extracted_trait"))
+
 
     # Fetch latest scores for this user from DB
     scored_map: Dict[str, float] = {}

@@ -27,10 +27,14 @@ async def generate_persona_response(state: AgentState) -> Dict[str, Any]:
     """Generates the AI response as Aura in character, paced to the user's texting style and weaving in elicitation."""
     persona = get_persona(state.get("persona_id"))
     style = state.get("user_style", {})
+    if not isinstance(style, dict):
+        style = {}
     directive = state.get("elicitation_directive")
     persona_locked = bool(state.get("persona_locked"))
-    messages_list = list(state.get("messages", []))
+    raw_messages = state.get("messages", [])
+    messages_list = list(raw_messages) if isinstance(raw_messages, list) else []
     turn_count = len([m for m in messages_list if isinstance(m, HumanMessage)])
+
 
     # Construct style pacing directives
     style_guidance = []
@@ -116,13 +120,14 @@ async def generate_persona_response(state: AgentState) -> Dict[str, Any]:
             response = await llm_to_call.ainvoke(messages, config=run_config)
 
         if response is None or not (response.content or getattr(response, "tool_calls", None)):
-            logger.warning("Empty response received from astream/ainvoke, retrying ainvoke...")
-            response = await llm_to_call.ainvoke(messages, config=run_config)
+            logger.warning("Empty response received from astream/ainvoke, retrying with raw llm ainvoke...")
+            response = await llm.ainvoke(messages, config=run_config)
 
-        if response is None:
+        if response is None or not (response.content or getattr(response, "tool_calls", None)):
             response = AIMessage(content="Hey! I'm Aura, here to map your personality and vibe. How is your day going so far?")
 
         return {"messages": [response]}
+
     else:
         # Fallback simulation if GEMINI_API_KEY is not yet populated
         last_user_msg = ""

@@ -8,11 +8,14 @@ import {
   MessageSquare,
   Compass,
   Sparkles,
+  PanelLeft,
 } from "lucide-react";
-import { ChatMessage, DetectedStyle, PersonaInfo, TraitScore, TraitInsight } from "./types";
+import { ChatMessage, DetectedStyle, PersonaInfo, TraitScore, TraitInsight, ChatSession } from "./types";
 import { TraitsModal } from "./traits-modal";
 import { LiveInsightsPanel } from "./live-insights-panel";
+import { ChatSessionsSidebar } from "./chat-sessions-sidebar";
 import { Badge } from "@/components/ui/badge";
+
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Tooltip,
@@ -154,6 +157,10 @@ export function ChatInterface() {
   const [isInsightsOpen, setIsInsightsOpen] = useState(true);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
 
+  // Chat Sessions History State
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
   // Live Personality Trait State
   const [liveTraits, setLiveTraits] = useState<TraitScore[]>([]);
   const [latestInsight, setLatestInsight] = useState<TraitInsight | null>(null);
@@ -188,11 +195,24 @@ export function ChatInterface() {
     }
   }, [userId]);
 
+  const loadSessions = useCallback(async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/chat/sessions?user_id=${userId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSessions(data);
+      }
+    } catch {
+      // Quiet fail if server unreachable
+    }
+  }, [userId]);
+
   useEffect(() => {
     setThreadId("thread_" + Math.random().toString(36).substring(2, 9));
     checkHealth();
     loadInitialTraits();
-  }, [checkHealth, loadInitialTraits]);
+    loadSessions();
+  }, [checkHealth, loadInitialTraits, loadSessions]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -208,6 +228,72 @@ export function ChatInterface() {
     setCurrentTargetTrait(null);
     setToastInsight(null);
   };
+
+  const handleSelectSession = async (selectedThreadId: string) => {
+    if (isStreaming) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/chat/sessions/${selectedThreadId}/messages`);
+      if (res.ok) {
+        const data = await res.json();
+        const formatted: ChatMessage[] = (data.messages || []).map((m: any) => ({
+          id: m.id,
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          timestamp: m.created_at ? new Date(m.created_at) : new Date(),
+          personaId: m.persona_id || "discovery",
+        }));
+        setMessages(formatted);
+        setThreadId(selectedThreadId);
+
+        // Resolve active persona from last message
+        const lastAsst = [...formatted].reverse().find((m) => m.role === "assistant");
+        if (lastAsst?.personaId && lastAsst.personaId !== "discovery") {
+          setActivePersonaId(lastAsst.personaId);
+          setPersonaLocked(true);
+        } else {
+          setActivePersonaId("discovery");
+          setPersonaLocked(false);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load session messages:", err);
+    }
+  };
+
+  const handleDeleteSession = async (deletedThreadId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/chat/sessions/${deletedThreadId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setSessions((prev) => prev.filter((s) => s.thread_id !== deletedThreadId));
+        if (deletedThreadId === threadId) {
+          handleResetSession();
+        }
+      }
+    } catch (err) {
+      console.error("Failed to delete session:", err);
+    }
+  };
+
+  const handleResetProfile = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/profile/${userId}/reset`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        setLiveTraits([]);
+        setLatestInsight(null);
+        setCurrentTargetTrait(null);
+        setToastInsight(null);
+        await loadInitialTraits();
+      }
+    } catch (err) {
+      console.error("Failed to reset profile:", err);
+    }
+  };
+
 
   const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || input).trim();
@@ -385,8 +471,10 @@ export function ChatInterface() {
     } finally {
       setIsStreaming(false);
       setStreamingMessageId(null);
+      loadSessions();
     }
   };
+
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -402,18 +490,38 @@ export function ChatInterface() {
     <div className="flex h-screen w-full flex-col bg-[#09090f] text-zinc-100 font-sans antialiased overflow-hidden">
       {/* ── Header ────────────────────────────────────────────────────── */}
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/6 bg-[#09090f]/90 px-4 md:px-6 backdrop-blur-md z-10">
-        {/* Logo */}
-        <div className="flex items-center gap-2.5">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-tr from-indigo-600 to-violet-500 font-bold text-sm text-white shadow-lg shadow-indigo-500/20">
-            A
-          </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold tracking-tight text-zinc-100 leading-none">
-              Aura<span className="text-indigo-400">·</span>Agent
-            </span>
-            <span className="text-[10px] text-zinc-500 font-medium">personality profiler</span>
+        {/* Left: Sidebar Toggle + Logo */}
+        <div className="flex items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger
+              id="toggle-sidebar-btn"
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className={`flex size-8 items-center justify-center rounded-lg border transition-all ${
+                isSidebarOpen
+                  ? "bg-indigo-600/20 border-indigo-500/40 text-indigo-300"
+                  : "bg-white/4 border-white/6 text-zinc-400 hover:text-zinc-100 hover:bg-white/8"
+              }`}
+            >
+              <PanelLeft className="size-4" />
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              {isSidebarOpen ? "Close history" : "Chat history"}
+            </TooltipContent>
+          </Tooltip>
+
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-tr from-indigo-600 to-violet-500 font-bold text-sm text-white shadow-lg shadow-indigo-500/20">
+              A
+            </div>
+            <div className="hidden sm:flex flex-col">
+              <span className="text-sm font-semibold tracking-tight text-zinc-100 leading-none">
+                Aura<span className="text-indigo-400">·</span>Agent
+              </span>
+              <span className="text-[10px] text-zinc-500 font-medium">personality profiler</span>
+            </div>
           </div>
         </div>
+
 
         {/* Active Persona Pill — center */}
         <PersonaPill persona={currentPersona} locked={personaLocked} />
@@ -656,6 +764,19 @@ export function ChatInterface() {
         </div>
       </div>
 
+      {/* ── Chat Sessions Left Sidebar ─────────────────────────────── */}
+      <ChatSessionsSidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        sessions={sessions}
+        currentSessionId={threadId}
+        onSelectSession={handleSelectSession}
+        onNewChat={handleResetSession}
+        onDeleteSession={handleDeleteSession}
+        onResetProfile={handleResetProfile}
+        userId={userId}
+      />
+
       {/* ── Live Personality Insights Panel (Slide-out) ───────────────── */}
       <LiveInsightsPanel
         isOpen={isInsightsOpen}
@@ -675,3 +796,4 @@ export function ChatInterface() {
     </div>
   );
 }
+

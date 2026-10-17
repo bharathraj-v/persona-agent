@@ -62,3 +62,20 @@ class UnstructuredMemory(Base):
     user_id = Column(String(100), nullable=False, unique=True, index=True)
     content = Column(Text, nullable=False, default="")  # Dynamic capped summary string
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+
+class ChatMessageRecord(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(String(100), primary_key=True)  # e.g. "msg_<uuid>"
+    user_id = Column(String(100), nullable=False, index=True)
+    thread_id = Column(String(100), nullable=False, index=True)
+    role = Column(String(20), nullable=False)  # "user" | "assistant" | "system"
+    content = Column(Text, nullable=False)
+    persona_id = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+
+    __table_args__ = (
+        Index("idx_user_thread_messages", "user_id", "thread_id", "created_at"),
+    )
+

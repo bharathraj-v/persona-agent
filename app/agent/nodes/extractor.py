@@ -44,8 +44,12 @@ async def evaluate_and_extract_trait(state: AgentState) -> Dict[str, Any]:
     persists to PostgreSQL, and clears current_target_trait so the next turn selects a new trait.
     """
     target = state.get("current_target_trait")
-    if not target:
+    if isinstance(target, str):
+        from app.agent.traits.catalog import SEED_TRAITS
+        target = next((t for t in SEED_TRAITS if t["id"] == target), None)
+    if not target or not isinstance(target, dict):
         return {}
+
 
     user_id = state.get("user_id", "default_user")
     thread_id = state.get("thread_id")
