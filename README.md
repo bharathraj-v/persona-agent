@@ -1,108 +1,131 @@
-# persona-agent
+# Aura · Personality & Vibe Profiling Agent
 
-> LangGraph-based conversational AI agent with continuous memory, dynamic LLM persona selection, adaptive communication pacing, and directional trait elicitation for behavioral profiling.
-
----
-
-## Overview
-
-`persona-agent` is an asynchronous conversational agent backend implemented with **LangGraph**, **FastAPI**, **Google Gemini**, and **PostgreSQL**. The system provides multi-turn conversational interactions across distinct character archetypes while concurrently functioning as an automated behavioral observation engine that constructs a user personality profile through natural dialogue.
-
-Rather than requiring static persona selection at initialization, `persona-agent` begins in an adaptive discovery mode. An LLM-driven evaluation node analyzes the user's communication style, vocabulary, tone, and topical engagement over the initial turns to select and bind the optimal companion archetype dynamically.
+> An emotionally intelligent, adaptive AI companion implemented with **LangGraph**, **FastAPI**, **Google Gemini**, and **PostgreSQL**. Aura naturally engages users in dialogue, aligns with their communication vibe, and systematically maps their authentic personality traits in real time.
 
 ---
 
-## Architecture and Core Components
+## Purpose & Core Thesis
 
-### Workflow Pipeline
+Aura is designed to **identify, understand, and map a user's authentic personality—their communication vibe, decision-making instincts, lifestyle structure, social energy, and emotional composure—through natural conversation**.
 
-```text
-[Next.js Chat Frontend]
-          │
-          │ (SSE Streaming / REST)
-          ▼
-   [FastAPI Backend]
-          │
-          ▼
- [LangGraph State Machine]
-   1. Style Analyzer Node     ──> Extracts message brevity, syntax, informal density
-   2. Persona Selector Node   ──> Evaluates turns 1-3 to classify and lock persona
-   3. Elicitation Goal Node   ──> Identifies low-confidence traits requiring signal
-   4. Persona Generator Node  ──> Generates in-character response with style pacing (Gemini)
-          │
-          ▼
-   [Streamed to Client via SSE]
+Rather than subjecting users to sterile psychological surveys or clinical questionnaires, Aura converses like a real companion:
+- **Discovers Communication Vibe**: Observes how you text (brevity, slang, humor, punctuation, energy) and calibrates its tone in real time.
+- **Dynamic Modality Handoff**: If your vibe resonates with a specific conversational archetype (witty banter, pragmatic mentorship, deep emotional empathy, or intellectual challenge), Aura seamlessly transitions into that modality via tool handoff.
+- **Directional Trait Elicitation**: Subtly weaves everyday scenarios and dilemmas into the flow of dialogue without ever using psychological jargon.
+- **Subagent Profiling & Live Map**: An internal profiling subagent derives concrete behavioral observations from your statements, calculates Bayesian confidence scores, and updates your live Personality Map in the UI as the chat progresses.
+
+---
+
+## The 4-Stage Conversational Loop
+
+```mermaid
+flowchart TD
+    START([User Message]) --> SA[1. Style Analyzer<br/>Regex heuristic: brevity, slang, energy]
+    SA --> TS[2. Trait Target Selector<br/>Selects lowest-confidence unmapped trait]
+    TS --> GEN[3. Aura Conversational Generator<br/>In-character streaming reply + situational probe]
+    
+    GEN --> ROUTE{Tool called?}
+    ROUTE -- "switch_persona" --> PT[persona_tools<br/>Switches archetype & emits SSE persona]
+    PT --> GEN
+    
+    ROUTE -- "No (Text Streamed)" --> TE[4. Trait Profiler Subagent<br/>Analyzes dialogue for targeted trait evidence]
+    
+    TE --> EVAL{Sufficient evidence?}
+    EVAL -- Yes --> SAVE[Persist UserTraitScore & Observation in PostgreSQL<br/>Emit SSE 'trait_updated'<br/>Reset target to select next trait]
+    EVAL -- No --> KEEP[Retain target trait for follow-up turn]
+    
+    SAVE --> END([END])
+    KEEP --> END([END])
 ```
 
-### Key Capabilities
-
-- **Dynamic LLM Persona Selection**:
-  - Initializes with `discovery` (Nova), an open conversational baseline.
-  - Across turns 1–3, an evaluation model assesses dialogue characteristics to transition into one of four focused archetypes:
-    - **Leo (`curious_banter`)**: Observant, conversational, informal pacing.
-    - **Marcus (`pragmatic_mentor`)**: Grounded, reflective, direct, and pragmatic.
-    - **Maya (`empathetic_confidant`)**: Attentive, emotionally perceptive, and supportive.
-    - **Zane (`analytical_challenger`)**: Structured, dialectical, and logically rigorous.
-- **Adaptive Communication Pacing**: Inspects incoming messages in real time (token length, capitalization patterns, informal slang, and punctuation) to adjust generation constraints to match user cadence.
-- **Directional Trait Elicitation**: Evaluates the user's personality profile to identify dimensions with low confidence scores, seeding situational prompts that elicit diagnostic behavioral signals without disclosing the underlying rubric.
-- **State Persistence and Memory**:
-  - **Thread-Scoped State**: Managed via LangGraph checkpointing (`AsyncPostgresSaver`) for multi-turn dialogue continuity.
-  - **Long-Term Trait Repository**: Maintained in PostgreSQL with running Bayesian confidence estimates, observation counts, and recorded user evidence snippets.
-- **Model Integration**: Utilizes Google Gemini (`gemini-3.5-flash-lite`) via `langchain-google-genai` for low-latency generation and structured extraction.
+### Stage Breakdown:
+1. **Stage 1 (Personality Alignment & Modality Handoff)**: Aura begins in discovery mode (Nova). During turns 1–3, Aura assesses user style. If a distinct style matches an archetype (Leo, Marcus, Maya, Zane), Aura invokes the tool `switch_persona` to lock that modality.
+2. **Stage 2 (Dynamic Trait Targeting)**: Inspects the user's running profile in PostgreSQL and selects the single trait with the lowest confidence score (< 75%) to explore next.
+3. **Stage 3 (In-Character Elicitation & Token Streaming)**: Generates the conversational response as Aura, adapting to user texting cadence and weaving in a relatable probe. Tokens stream directly to the client via SSE with zero blocking.
+4. **Stage 4 (Subagent Trait Extraction & Persistence)**: A specialized profiling subagent evaluates the conversation specifically for the targeted trait. If sufficient evidence is present:
+   - Formulates the structured extraction (score, quote, reasoning, confidence delta).
+   - Persists the observation and running weighted score to PostgreSQL.
+   - Emits an SSE `trait_updated` event to the frontend.
+   - Clears the target so Stage 2 picks the next trait on the following turn.
+   - Repeats until all 8 traits reach confident completion (75%+).
 
 ---
 
-## Tracked Personality Traits
+## Tracked Personality Dimensions
 
-The baseline system profiles 8 behavioral traits on normalized continuous scales:
+Aura profiles 8 behavioral traits on normalized continuous scales (1.0 to 7.0):
 
 | Trait Identifier | Domain | Spectrum Anchors (Low / High) |
 | :--- | :--- | :--- |
-| `communication_directness` | Communication | Diplomatic & Indirect / Direct & Unambiguous |
-| `curiosity_breadth` | Intellect & Learning | Focused Specialist / Broad Generalist |
-| `decision_speed` | Decision Making | Deliberate & Analytical / Rapid & Intuitive |
+| `communication_directness` | Communication | Diplomatic & Indirect / Direct & Candid |
+| `curiosity_breadth` | Intellect & Learning | Focused Specialist / Omnivorous Generalist |
+| `decision_speed` | Decision Making | Deliberate & Analytical / Rapid & Instinctive |
 | `structure_preference` | Work & Lifestyle | Fluid & Spontaneous / Structured & Methodical |
 | `social_energy` | Social & Energy | Solitary & Internally Focused / Extroverted & Interactive |
-| `humor_style` | Social & Energy | Dry & Deadpan / Light & Warm |
+| `humor_style` | Social & Energy | Dry & Deadpan / Light & Warmly Playful |
 | `risk_tolerance` | Disposition | Risk-Averse & Predictable / High Risk & Exploratory |
 | `stress_composure` | Disposition | Emotionally Expressive / Composed & Solution-Focused |
+
+---
+
+## Modular Prompts Architecture
+
+All system prompts are organized in clean, maintainable Markdown files under `app/agent/prompts/`:
+
+```text
+app/agent/prompts/
+├── base_aura.md               # Core thesis, identity, and mission of Aura
+├── elicitation.md             # Guidelines for natural scenario probes
+├── extraction.md              # Trait Profiler subagent scoring rubrics
+├── loader.py                  # Prompt loader with caching
+└── archetypes/
+    ├── discovery.md           # Nova: adaptive companion discovering vibe
+    ├── curious_banter.md      # Leo: witty, quick banter, playful friend
+    ├── pragmatic_mentor.md    # Marcus: grounded, calm, candid perspective
+    ├── empathetic_confidant.md# Maya: warm, intuitive, emotional depth
+    └── analytical_challenger.md # Zane: sharp intellectual sparring partner
+```
+
+---
+
+## Server-Sent Events (SSE) Streaming
+
+The `/api/chat/stream` endpoint streams real-time events to the frontend:
+
+| Event Type | Payload | Description |
+| :--- | :--- | :--- |
+| `delta` | `{"token": "..."}` | Live token-by-token conversational text stream. |
+| `persona` | `{"persona_id": "...", "locked": true}` | Emitted when Aura switches archetype modality. |
+| `target_trait` | `{"trait_id": "...", "name": "..."}` | Informs client of the active trait being explored. |
+| `trait_updated` | `{"trait_id": "...", "score": 6.2, "quote": "...", ...}` | Emitted when a trait observation is extracted and saved. |
+| `style` | `{"length_preference": "...", "energy": "..."}` | Live detected user texting cadence. |
+| `done` | `{"thread_id": "...", "done": true}` | Indicates end of turn streaming. |
 
 ---
 
 ## Getting Started
 
 ### Prerequisites
-
 - Python 3.11+
+- Node.js 18+ & npm
 - Docker and Docker Compose
 - Google Gemini API Key
 
 ### 1. Database Initialization
-
-Start the PostgreSQL service:
-
+Start PostgreSQL via Docker Compose:
 ```bash
 docker compose up -d
 ```
 
-### 2. Environment Setup
-
-Create and activate a virtual environment:
-
+### 2. Backend Setup
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-Configure environment variables:
-
-```bash
 cp .env.example .env
 ```
 
-Ensure the following variables are defined in `.env`:
-
+Ensure `.env` contains your Gemini API key:
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
 DEFAULT_CHAT_MODEL=gemini-3.5-flash-lite
@@ -110,37 +133,26 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/persona_agent
 CHECKPOINTER_DB_URL=postgresql://postgres:postgres@localhost:5432/persona_agent
 ```
 
-### 3. Running the Application
-
-Start the FastAPI application with Uvicorn:
-
+Start the FastAPI application:
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
-- API Documentation: `http://localhost:8000/docs`
-- Health Endpoint: `http://localhost:8000/health`
+### 3. Frontend Setup
+In a new terminal:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Visit `http://localhost:3000` to chat with Aura and watch your Personality Map develop in real time!
 
 ---
 
-## API Reference
+## Testing
 
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `POST` | `/api/chat/stream` | Server-Sent Events (SSE) token stream for dialogue turns. |
-| `POST` | `/api/chat/message` | Synchronous REST execution for dialogue turns. |
-| `GET` | `/api/personas` | Lists configured persona archetypes and baseline settings. |
-| `GET` | `/api/traits` | Returns the active trait catalog and scoring definitions. |
-| `GET` | `/api/profile/{user_id}/traits` | Returns computed trait scores, confidence levels, and observations. |
-| `GET` | `/api/profile/{user_id}/observations` | Retrieves raw observation history with quote evidence. |
-| `GET` | `/api/threads/{thread_id}/history` | Retrieves conversation history from the checkpointer. |
-
----
-
-## Verification and Testing
-
-Execute the test suite using pytest:
-
+Run the test suite with pytest:
 ```bash
 pytest tests/
 ```

@@ -35,4 +35,20 @@ export interface TraitScore {
   high_anchor: string;
   scale_min: number;
   scale_max: number;
+  last_quote?: string;
+  last_reasoning?: string;
+}
+
+export interface TraitInsight {
+  trait_id: string;
+  name: string;
+  domain: string;
+  score: number;
+  confidence: number;
+  quote: string;
+  reasoning: string;
+  low_anchor: string;
+  high_anchor: string;
+  scale_min: number;
+  scale_max: number;
 }

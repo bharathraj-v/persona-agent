@@ -2,7 +2,19 @@ import pytest
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from app.agent.nodes.persona_selector import switch_persona, handle_persona_switch
 from app.agent.graph import build_persona_graph, route_after_generator
-from langgraph.graph import END
+from app.agent.prompts.loader import load_prompt
+
+
+def test_prompt_loader():
+    base = load_prompt("base_aura.md")
+    assert "Aura" in base
+    assert "Core Principles" in base
+
+    elicitation = load_prompt("elicitation.md")
+    assert "Elicitation Rules" in elicitation
+
+    extraction = load_prompt("extraction.md")
+    assert "Trait Profiler Subagent" in extraction
 
 
 def test_switch_persona_tool():
@@ -43,7 +55,7 @@ def test_handle_persona_switch_valid():
 
 
 def test_route_after_generator():
-    # When switch_persona was called and persona is not locked
+    # When switch_persona was called and persona is not locked -> route to persona_tools
     state_switch = {
         "messages": [
             AIMessage(
@@ -55,7 +67,7 @@ def test_route_after_generator():
     }
     assert route_after_generator(state_switch) == "persona_tools"
 
-    # When persona is already locked
+    # When persona is already locked -> routes to trait_evaluator subagent
     state_locked = {
         "messages": [
             AIMessage(
@@ -65,14 +77,14 @@ def test_route_after_generator():
         ],
         "persona_locked": True
     }
-    assert route_after_generator(state_locked) == END
+    assert route_after_generator(state_locked) == "trait_evaluator"
 
-    # When normal conversational message without tool calls
+    # When normal conversational message without tool calls -> routes to trait_evaluator subagent
     state_normal = {
         "messages": [AIMessage(content="Hello there!")],
         "persona_locked": False
     }
-    assert route_after_generator(state_normal) == END
+    assert route_after_generator(state_normal) == "trait_evaluator"
 
 
 def test_build_persona_graph():
@@ -82,3 +94,4 @@ def test_build_persona_graph():
     assert "persona_tools" in compiled.nodes
     assert "style_analyzer" in compiled.nodes
     assert "elicitation_selector" in compiled.nodes
+    assert "trait_evaluator" in compiled.nodes

@@ -6,9 +6,12 @@ import {
   RotateCcw,
   SlidersHorizontal,
   MessageSquare,
+  Compass,
+  Sparkles,
 } from "lucide-react";
-import { ChatMessage, DetectedStyle, PersonaInfo } from "./types";
+import { ChatMessage, DetectedStyle, PersonaInfo, TraitScore, TraitInsight } from "./types";
 import { TraitsModal } from "./traits-modal";
+import { LiveInsightsPanel } from "./live-insights-panel";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -53,29 +56,11 @@ const DEFAULT_PERSONAS: Record<string, PersonaInfo> = {
 };
 
 const STARTER_PROMPTS = [
-  "What's something interesting you've been thinking about lately?",
-  "I need someone to bounce ideas off of — got a minute?",
-  "Free weekend: do you plan it out or just wing it?",
-  "Give me your hottest take on modern tech.",
+  "Free weekend: do you plan out every detail or just wing it?",
+  "Honestly, I hate when people are passive-aggressive at work.",
+  "I'm weighing a safe corporate job against a chaotic startup — thoughts?",
+  "Late nights with ideas or early morning routine? What's your vibe?",
 ];
-
-// ─── SSE parser helper ────────────────────────────────────────────────────────
-function parseSSEMessages(raw: string): { event: string; data: string }[] {
-  const results: { event: string; data: string }[] = [];
-  // SSE messages are delimited by double newline
-  const messages = raw.split(/\r?\n\r?\n/);
-  for (const msg of messages) {
-    if (!msg.trim()) continue;
-    let event = "message";
-    let data = "";
-    for (const line of msg.split(/\r?\n/)) {
-      if (line.startsWith("event:")) event = line.slice(6).trim();
-      else if (line.startsWith("data:")) data = line.slice(5).trim();
-    }
-    if (data) results.push({ event, data });
-  }
-  return results;
-}
 
 // ─── Components ───────────────────────────────────────────────────────────────
 
@@ -154,7 +139,7 @@ function TypingIndicator({ persona }: { persona: PersonaInfo }) {
   );
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// ─── Main Interface ───────────────────────────────────────────────────────────
 
 export function ChatInterface() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -166,19 +151,21 @@ export function ChatInterface() {
   const [personaLocked, setPersonaLocked] = useState(false);
   const [serverOnline, setServerOnline] = useState<boolean | null>(null);
   const [isTraitsModalOpen, setIsTraitsModalOpen] = useState(false);
+  const [isInsightsOpen, setIsInsightsOpen] = useState(true);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
+
+  // Live Personality Trait State
+  const [liveTraits, setLiveTraits] = useState<TraitScore[]>([]);
+  const [latestInsight, setLatestInsight] = useState<TraitInsight | null>(null);
+  const [currentTargetTrait, setCurrentTargetTrait] = useState<{
+    trait_id: string;
+    name: string;
+    domain: string;
+  } | null>(null);
+  const [toastInsight, setToastInsight] = useState<TraitInsight | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    setThreadId("thread_" + Math.random().toString(36).substring(2, 9));
-    checkHealth();
-  }, []);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isStreaming]);
 
   const checkHealth = useCallback(async () => {
     try {
@@ -189,12 +176,37 @@ export function ChatInterface() {
     }
   }, []);
 
+  const loadInitialTraits = useCallback(async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/profile/${userId}/traits`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.traits) setLiveTraits(data.traits);
+      }
+    } catch {
+      // Quiet fail if server unreachable
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    setThreadId("thread_" + Math.random().toString(36).substring(2, 9));
+    checkHealth();
+    loadInitialTraits();
+  }, [checkHealth, loadInitialTraits]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isStreaming]);
+
   const handleResetSession = () => {
     setThreadId("thread_" + Math.random().toString(36).substring(2, 9));
     setMessages([]);
     setActivePersonaId("discovery");
     setPersonaLocked(false);
     setStreamingMessageId(null);
+    setLatestInsight(null);
+    setCurrentTargetTrait(null);
+    setToastInsight(null);
   };
 
   const handleSendMessage = async (textToSend?: string) => {
@@ -260,13 +272,11 @@ export function ChatInterface() {
 
         // Split on double-newline boundaries (SSE message separator)
         const rawMessages = buffer.split(/\r?\n\r?\n/);
-        // Keep last potentially incomplete chunk in the buffer
         buffer = rawMessages.pop() ?? "";
 
         for (const rawMsg of rawMessages) {
           if (!rawMsg.trim()) continue;
 
-          // Parse event type and data from this discrete SSE message
           let eventType = "message";
           let dataLine = "";
           for (const line of rawMsg.split(/\r?\n/)) {
@@ -288,8 +298,6 @@ export function ChatInterface() {
                     : m
                 )
               );
-            } else if (eventType === "style") {
-              // Style info received — no UI update needed, just logged
             } else if (eventType === "persona" && parsed.persona_id) {
               setActivePersonaId(parsed.persona_id);
               if (parsed.locked) setPersonaLocked(true);
@@ -298,6 +306,38 @@ export function ChatInterface() {
                   m.id === asstId ? { ...m, personaId: parsed.persona_id } : m
                 )
               );
+            } else if (eventType === "target_trait" && parsed.trait_id) {
+              setCurrentTargetTrait(parsed);
+            } else if (eventType === "trait_updated" && parsed.trait_id) {
+              const insight: TraitInsight = parsed;
+              setLatestInsight(insight);
+              setToastInsight(insight);
+              setTimeout(() => setToastInsight(null), 6000);
+
+              // Update live traits collection
+              setLiveTraits((prev) => {
+                const idx = prev.findIndex((t) => t.trait_id === insight.trait_id);
+                const updated: TraitScore = {
+                  trait_id: insight.trait_id,
+                  name: insight.name,
+                  domain: insight.domain,
+                  score: insight.score,
+                  confidence: insight.confidence,
+                  observation_count: idx >= 0 ? prev[idx].observation_count + 1 : 1,
+                  low_anchor: insight.low_anchor,
+                  high_anchor: insight.high_anchor,
+                  scale_min: insight.scale_min,
+                  scale_max: insight.scale_max,
+                  last_quote: insight.quote,
+                  last_reasoning: insight.reasoning,
+                };
+                if (idx >= 0) {
+                  const copy = [...prev];
+                  copy[idx] = updated;
+                  return copy;
+                }
+                return [updated, ...prev];
+              });
             } else if (eventType === "done") {
               if (parsed.persona_id) setActivePersonaId(parsed.persona_id);
             } else if (eventType === "error") {
@@ -315,7 +355,7 @@ export function ChatInterface() {
               );
             }
           } catch {
-            // Partial / non-JSON data chunk — silently skip
+            // Partial / non-JSON data chunk
           }
         }
       }
@@ -342,7 +382,6 @@ export function ChatInterface() {
             : m
         )
       );
-      setServerOnline(false);
     } finally {
       setIsStreaming(false);
       setStreamingMessageId(null);
@@ -357,27 +396,49 @@ export function ChatInterface() {
   };
 
   const currentPersona = DEFAULT_PERSONAS[activePersonaId] ?? DEFAULT_PERSONAS["discovery"];
+  const exploredTraitsCount = liveTraits.filter((t) => (t.observation_count || 0) > 0 || (t.confidence || 0) > 0).length;
 
   return (
-    <div className="flex h-screen w-full flex-col bg-[#09090f] text-zinc-100 font-sans antialiased">
+    <div className="flex h-screen w-full flex-col bg-[#09090f] text-zinc-100 font-sans antialiased overflow-hidden">
       {/* ── Header ────────────────────────────────────────────────────── */}
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/6 bg-[#09090f]/90 px-4 md:px-6 backdrop-blur-md z-10">
         {/* Logo */}
         <div className="flex items-center gap-2.5">
           <div className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-tr from-indigo-600 to-violet-500 font-bold text-sm text-white shadow-lg shadow-indigo-500/20">
-            P
+            A
           </div>
-          <span className="text-sm font-semibold tracking-tight text-zinc-100">
-            persona<span className="text-indigo-400">·</span>agent
-          </span>
+          <div className="flex flex-col">
+            <span className="text-sm font-semibold tracking-tight text-zinc-100 leading-none">
+              Aura<span className="text-indigo-400">·</span>Agent
+            </span>
+            <span className="text-[10px] text-zinc-500 font-medium">personality profiler</span>
+          </div>
         </div>
 
         {/* Active Persona Pill — center */}
         <PersonaPill persona={currentPersona} locked={personaLocked} />
 
         {/* Right actions */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
           <StatusDot online={serverOnline} />
+
+          {/* Toggle Live Insights Panel */}
+          <button
+            id="toggle-insights-btn"
+            onClick={() => setIsInsightsOpen(!isInsightsOpen)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+              isInsightsOpen
+                ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
+                : "text-zinc-300 hover:text-white bg-white/4 hover:bg-white/8 border border-white/6"
+            }`}
+            title="Toggle Live Personality Map"
+          >
+            <Compass className="size-3.5" />
+            <span className="hidden sm:inline">Map</span>
+            <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-black/30">
+              {exploredTraitsCount}/8
+            </span>
+          </button>
 
           <Tooltip>
             <TooltipTrigger
@@ -388,7 +449,7 @@ export function ChatInterface() {
               <SlidersHorizontal className="size-4" />
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">
-              Profile traits
+              Full Profile Rubrics
             </TooltipContent>
           </Tooltip>
 
@@ -407,22 +468,42 @@ export function ChatInterface() {
         </div>
       </header>
 
+      {/* ── Live Insight Toast Notification Banner ─────────────────────── */}
+      {toastInsight && (
+        <div className="sticky top-14 z-20 mx-auto w-full max-w-xl px-4 pt-2 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-indigo-500/30 bg-indigo-950/80 backdrop-blur-md text-xs text-indigo-200 shadow-xl">
+            <div className="flex items-center gap-2 truncate">
+              <Sparkles className="size-3.5 text-indigo-400 shrink-0" />
+              <span className="truncate">
+                New insight: <strong className="text-white font-medium">{toastInsight.name}</strong> ({toastInsight.score.toFixed(1)}/7)
+              </span>
+            </div>
+            <button
+              onClick={() => setIsInsightsOpen(true)}
+              className="text-[11px] underline text-indigo-300 hover:text-white shrink-0 font-medium"
+            >
+              View Map →
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Message list ──────────────────────────────────────────────── */}
       <ScrollArea className="flex-1 min-h-0">
         <div className="mx-auto max-w-2xl px-4 py-8 space-y-5">
           {messages.length === 0 ? (
             /* Empty state */
-            <div className="flex flex-col items-center justify-center pt-20 text-center space-y-7">
-              <div className="size-14 rounded-2xl bg-gradient-to-tr from-indigo-500/20 to-violet-500/20 border border-indigo-500/20 flex items-center justify-center text-2xl">
+            <div className="flex flex-col items-center justify-center pt-16 text-center space-y-6">
+              <div className="size-16 rounded-2xl bg-gradient-to-tr from-indigo-500/20 via-violet-500/20 to-emerald-500/20 border border-indigo-500/30 flex items-center justify-center text-3xl shadow-xl shadow-indigo-500/10">
                 ✨
               </div>
               <div className="space-y-2 max-w-sm">
                 <h2 className="text-lg font-semibold text-zinc-100">
-                  Chat with Nova
+                  Meet Aura
                 </h2>
-                <p className="text-sm text-zinc-500 leading-relaxed">
-                  Just talk naturally. The agent will adapt its tone and match
-                  you with the right persona as you chat.
+                <p className="text-xs text-zinc-400 leading-relaxed">
+                  Talk naturally about your day, how you make decisions, or what matters to you.
+                  Aura adapts its vibe to yours while continuously mapping your authentic personality.
                 </p>
               </div>
               {/* Starter prompts */}
@@ -450,50 +531,45 @@ export function ChatInterface() {
                   : currentPersona;
                 const isCurrentlyStreaming =
                   message.isStreaming && message.id === streamingMessageId;
-                const hasContent = message.content.length > 0;
 
                 return (
                   <div
                     key={message.id}
-                    className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"} animate-in fade-in slide-in-from-bottom-1 duration-200`}
+                    className={`flex gap-3 items-end ${
+                      isUser ? "justify-end" : "justify-start"
+                    }`}
                   >
                     {/* Assistant avatar */}
                     {!isUser && (
                       <div
-                        className={`size-8 shrink-0 rounded-xl bg-zinc-900/80 border border-white/8 flex items-center justify-center text-sm shadow-sm transition-opacity ${isCurrentlyStreaming ? "opacity-100" : "opacity-90"}`}
+                        className="size-8 shrink-0 rounded-xl bg-zinc-900/80 border border-white/8 flex items-center justify-center text-sm shadow-sm"
+                        title={persona?.name}
                       >
-                        {persona?.avatar ?? "🤖"}
+                        {persona?.avatar ?? "✨"}
                       </div>
                     )}
 
-                    <div className={`space-y-1 max-w-[82%] md:max-w-[72%]`}>
-                      {/* Persona name label */}
-                      {!isUser && (
-                        <div className="text-[11px] text-zinc-500 px-1 font-medium flex items-center gap-1.5">
-                          {persona?.name ?? "Assistant"}
-                          {isCurrentlyStreaming && hasContent && (
-                            <span className="size-1.5 rounded-full bg-indigo-400 animate-pulse" />
-                          )}
-                        </div>
-                      )}
-
-                      {/* Bubble */}
+                    {/* Bubble */}
+                    <div
+                      className={`max-w-[85%] sm:max-w-[75%] space-y-1 ${
+                        isUser ? "items-end" : "items-start"
+                      }`}
+                    >
                       <div
-                        className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                        className={`rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
                           isUser
-                            ? "bg-indigo-600 text-white rounded-tr-sm shadow-md shadow-indigo-900/30"
-                            : "bg-zinc-900/60 text-zinc-100 border border-white/6 rounded-tl-sm shadow-sm"
+                            ? "bg-indigo-600 text-white rounded-br-sm"
+                            : "bg-zinc-900/80 border border-white/6 text-zinc-100 rounded-bl-sm"
                         }`}
                       >
-                        {isCurrentlyStreaming && !hasContent ? (
-                          /* Show typing dots while waiting for first token */
-                          <div className="flex gap-1.5 items-center py-0.5">
-                            {[0, 150, 300].map((d) => (
+                        {isCurrentlyStreaming && !message.content ? (
+                          <div className="flex gap-1.5 items-center h-4">
+                            {[0, 150, 300].map((delay) => (
                               <span
-                                key={d}
+                                key={delay}
                                 className="size-1.5 rounded-full bg-zinc-500 animate-bounce"
                                 style={{
-                                  animationDelay: `${d}ms`,
+                                  animationDelay: `${delay}ms`,
                                   animationDuration: "1s",
                                 }}
                               />
@@ -509,7 +585,9 @@ export function ChatInterface() {
 
                       {/* Timestamp */}
                       <div
-                        className={`text-[10px] text-zinc-600 px-1 ${isUser ? "text-right" : "text-left"}`}
+                        className={`text-[10px] text-zinc-600 px-1 ${
+                          isUser ? "text-right" : "text-left"
+                        }`}
                       >
                         {message.timestamp.toLocaleTimeString([], {
                           hour: "2-digit",
@@ -530,7 +608,6 @@ export function ChatInterface() {
               <div ref={messagesEndRef} />
             </>
           )}
-          {/* Scroll anchor for empty state */}
           {messages.length === 0 && <div ref={messagesEndRef} />}
         </div>
       </ScrollArea>
@@ -560,7 +637,7 @@ export function ChatInterface() {
               placeholder={
                 isStreaming
                   ? `${currentPersona.name} is responding…`
-                  : "Message… (Enter to send)"
+                  : "Message Aura… (Enter to send)"
               }
               className="flex-1 max-h-40 resize-none bg-transparent px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
             />
@@ -574,12 +651,21 @@ export function ChatInterface() {
             </button>
           </div>
           <p className="text-[11px] text-zinc-600 text-center mt-2">
-            Powered by LangGraph &amp; Gemini · Enter to send · Shift+Enter for newline
+            Aura Profiler · Enter to send · Shift+Enter for newline
           </p>
         </div>
       </div>
 
-      {/* ── Traits modal ─────────────────────────────────────────────── */}
+      {/* ── Live Personality Insights Panel (Slide-out) ───────────────── */}
+      <LiveInsightsPanel
+        isOpen={isInsightsOpen}
+        onClose={() => setIsInsightsOpen(false)}
+        traits={liveTraits}
+        latestInsight={latestInsight}
+        currentTargetTrait={currentTargetTrait}
+      />
+
+      {/* ── Full Rubrics Modal ────────────────────────────────────────── */}
       <TraitsModal
         isOpen={isTraitsModalOpen}
         onClose={() => setIsTraitsModalOpen(false)}

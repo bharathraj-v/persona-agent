@@ -9,6 +9,7 @@ from app.agent.nodes.style_analyzer import analyze_user_style
 from app.agent.nodes.persona_selector import handle_persona_switch
 from app.agent.nodes.elicitation import select_elicitation_target
 from app.agent.nodes.generator import generate_persona_response
+from app.agent.nodes.extractor import evaluate_and_extract_trait
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +19,10 @@ _pool = None
 
 
 def route_after_generator(state: AgentState) -> str:
-    """Routes to persona_tools if switch_persona was invoked and persona is unlocked; otherwise ends turn."""
+    """Routes to persona_tools if switch_persona was invoked and persona is unlocked; otherwise routes to trait_evaluator."""
     messages = state.get("messages", [])
     if not messages:
-        return END
+        return "trait_evaluator"
 
     last_message = messages[-1]
     if isinstance(last_message, AIMessage) and last_message.tool_calls:
@@ -29,11 +30,14 @@ def route_after_generator(state: AgentState) -> str:
         if has_switch and not state.get("persona_locked"):
             return "persona_tools"
 
-    return END
+    return "trait_evaluator"
 
 
 def build_persona_graph(checkpointer=None):
-    """Constructs the persona agent state graph with style adaptation, tool-based persona switching, and elicitation."""
+    """
+    Constructs the Aura persona agent state graph with style adaptation,
+    tool-based persona handoff, directional trait elicitation, and subagent trait extraction.
+    """
     builder = StateGraph(AgentState)
 
     # Add Nodes
@@ -41,23 +45,27 @@ def build_persona_graph(checkpointer=None):
     builder.add_node("elicitation_selector", select_elicitation_target)
     builder.add_node("generator", generate_persona_response)
     builder.add_node("persona_tools", handle_persona_switch)
+    builder.add_node("trait_evaluator", evaluate_and_extract_trait)
 
     # Add Edges
     builder.add_edge(START, "style_analyzer")
     builder.add_edge("style_analyzer", "elicitation_selector")
     builder.add_edge("elicitation_selector", "generator")
 
-    # Conditional routing after generation
+    # Conditional routing after generation: either switch persona or evaluate trait
     builder.add_conditional_edges(
         "generator",
         route_after_generator,
         {
             "persona_tools": "persona_tools",
-            END: END
+            "trait_evaluator": "trait_evaluator"
         }
     )
     # Loop back to generator after persona switch tool execution
     builder.add_edge("persona_tools", "generator")
+
+    # After trait evaluation subagent completes, end turn
+    builder.add_edge("trait_evaluator", END)
 
     return builder.compile(checkpointer=checkpointer)
 

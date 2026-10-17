@@ -6,8 +6,6 @@ from sse_starlette.sse import EventSourceResponse
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from app.api.schemas import ChatMessageRequest, ChatMessageResponse
 from app.agent.graph import get_app_graph
-# NOTE: Extractor is intentionally commented out for now to plan triggering strategy
-# from app.agent.nodes.extractor import run_trait_extraction
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +59,14 @@ async def send_chat_message(req: ChatMessageRequest, background_tasks: Backgroun
     active_persona = result.get("persona_id", req.persona_id or "discovery")
     logger.info(f"[chat/message] Done | thread={req.thread_id} persona={active_persona}")
 
+    target_trait = result.get("current_target_trait")
+    targeted_list = [target_trait] if target_trait else result.get("targeted_traits", [])
+
     return ChatMessageResponse(
         reply=reply_content,
         persona_id=active_persona,
         detected_style=result.get("user_style", {}),
-        targeted_traits=result.get("targeted_traits", []),
+        targeted_traits=targeted_list,
         thread_id=req.thread_id
     )
 
@@ -96,8 +97,12 @@ async def stream_chat_message(req: ChatMessageRequest, background_tasks: Backgro
             async for event in agent_graph.astream_events(input_state, config, version="v2"):
                 event_type = event.get("event")
 
-                # Stream LLM tokens (filter out tool calls / tool chunks)
-                if event_type == "on_chat_model_stream":
+                tags = event.get("tags", [])
+                node_name = event.get("metadata", {}).get("langgraph_node")
+                is_extractor = ("trait_extractor" in tags) or (node_name == "trait_evaluator")
+
+                # Stream LLM tokens ONLY from conversational generator (never from trait_evaluator subagent)
+                if event_type == "on_chat_model_stream" and not is_extractor:
                     chunk = event.get("data", {}).get("chunk")
                     has_tool_call = bool(
                         getattr(chunk, "tool_call_chunks", None) or
@@ -115,8 +120,8 @@ async def stream_chat_message(req: ChatMessageRequest, background_tasks: Backgro
                                 "data": json.dumps({"token": content_str})
                             }
 
-                # Fallback if chat model completed in a single chunk or buffered
-                elif event_type == "on_chat_model_end":
+                # Fallback if chat model completed in a single chunk or buffered (generator only)
+                elif event_type == "on_chat_model_end" and not is_extractor:
                     if token_count == 0:
                         output = event.get("data", {}).get("output")
                         if output:
@@ -141,6 +146,19 @@ async def stream_chat_message(req: ChatMessageRequest, background_tasks: Backgro
                         "data": json.dumps(style)
                     }
 
+                elif event_type == "on_chain_end" and event.get("name") == "elicitation_selector":
+                    data = event.get("data", {}).get("output", {})
+                    target = data.get("current_target_trait")
+                    if target:
+                        yield {
+                            "event": "target_trait",
+                            "data": json.dumps({
+                                "trait_id": target.get("trait_id"),
+                                "name": target.get("name"),
+                                "domain": target.get("domain")
+                            })
+                        }
+
                 elif event_type == "on_chain_end" and event.get("name") == "persona_tools":
                     data = event.get("data", {}).get("output", {})
                     if "persona_id" in data:
@@ -155,7 +173,7 @@ async def stream_chat_message(req: ChatMessageRequest, background_tasks: Backgro
                         }
 
                 elif event_type == "on_chain_end" and event.get("name") == "generator":
-                    # Chain-level fallback: ensure UI never receives empty message if generator produced output
+                    # Chain-level fallback: ensure UI receives message if generator produced output
                     if token_count == 0:
                         data = event.get("data", {}).get("output", {})
                         msgs = data.get("messages", [])
@@ -172,6 +190,56 @@ async def stream_chat_message(req: ChatMessageRequest, background_tasks: Backgro
                                         "event": "delta",
                                         "data": json.dumps({"token": content_str})
                                     }
+
+                elif event_type == "on_chain_end" and event.get("name") == "trait_evaluator":
+                    data = event.get("data", {}).get("output", {})
+                    extracted = data.get("latest_extracted_trait")
+                    if extracted:
+                        logger.info(f"[SSE] Trait updated | thread={req.thread_id} | trait={extracted.get('trait_id')}")
+                        yield {
+                            "event": "trait_updated",
+                            "data": json.dumps(extracted)
+                        }
+
+            # Safety recovery: if 0 tokens were streamed across the whole pipeline, retry directly
+            if token_count == 0:
+                logger.warning(f"[SSE] Zero tokens streamed for thread={req.thread_id}. Executing recovery fallback...")
+                try:
+                    from app.agent.nodes.generator import get_llm
+                    llm = get_llm()
+                    if llm:
+                        state = await agent_graph.aget_state(config)
+                        msgs = state.values.get("messages", []) if (state and state.values) else []
+                        fallback_text = ""
+                        for m in reversed(msgs):
+                            if isinstance(m, AIMessage) and m.content and not getattr(m, "tool_calls", None):
+                                fallback_text = extract_text_from_content(m.content)
+                                if fallback_text:
+                                    break
+                        if fallback_text:
+                            logger.info(f"[SSE] Recovered {len(fallback_text)} chars from graph state")
+                            token_count += 1
+                            accumulated_text.append(fallback_text)
+                            yield {
+                                "event": "delta",
+                                "data": json.dumps({"token": fallback_text})
+                            }
+                        else:
+                            retry_messages = [
+                                SystemMessage(content="You are Aura, an engaging conversational companion mapping the user's personality. Reply warmly in character."),
+                                HumanMessage(content=req.message)
+                            ]
+                            async for chunk in llm.astream(retry_messages, config={"tags": ["agent_conversation"]}):
+                                content_str = extract_text_from_content(chunk.content)
+                                if content_str:
+                                    token_count += 1
+                                    accumulated_text.append(content_str)
+                                    yield {
+                                        "event": "delta",
+                                        "data": json.dumps({"token": content_str})
+                                    }
+                except Exception as recovery_err:
+                    logger.error(f"[SSE] Recovery generation error: {recovery_err}")
 
             full_reply = "".join(accumulated_text)
             logger.info(f"[SSE] Stream complete | thread={req.thread_id} | persona={resolved_persona} | tokens={token_count}")
