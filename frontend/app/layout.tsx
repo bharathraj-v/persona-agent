@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -14,7 +15,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "persona-agent | Adaptive Conversational AI",
-  description: "LangGraph-based adaptive chat companion with continuous memory and behavioral profiling",
+  description:
+    "LangGraph-based adaptive chat companion with continuous memory and behavioral profiling",
 };
 
 export default function RootLayout({
@@ -27,7 +29,9 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-zinc-950 text-zinc-100">{children}</body>
+      <body className="min-h-full flex flex-col bg-[#09090f] text-zinc-100">
+        <TooltipProvider delay={400}>{children}</TooltipProvider>
+      </body>
     </html>
   );
 }
