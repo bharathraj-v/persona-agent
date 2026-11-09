@@ -1,167 +1,161 @@
-<div align="center">
-  <img src="docs/aura-mark.svg" width="112" alt="Aura mark" />
-  <h1>Aura</h1>
-  <p><strong>Personality &amp; Vibe Profiling Agent</strong></p>
-  <p>An emotionally intelligent, adaptive AI companion that maps the contours of how you think, speak, and move through the world.</p>
-  <p>
-    <code>LangGraph</code>&nbsp;&nbsp;·&nbsp;&nbsp;<code>FastAPI</code>&nbsp;&nbsp;·&nbsp;&nbsp;<code>PostgreSQL</code>
-  </p>
-</div>
+# Aura
 
-<br />
+Conversational personality profiling agent. A LangGraph pipeline drives a streaming chat, and a separate extraction step scores users on 8 behavioral traits from their messages. Scores and supporting evidence are stored in PostgreSQL and shown live in a Next.js UI.
 
-<div align="center">
-  <table>
-    <tr>
-      <td align="center" width="25%"><strong>Listen</strong><br /><sub>Find the signal in natural conversation</sub></td>
-      <td align="center" width="25%"><strong>Adapt</strong><br /><sub>Meet your communication vibe</sub></td>
-      <td align="center" width="25%"><strong>Explore</strong><br /><sub>Ask better questions, gently</sub></td>
-      <td align="center" width="25%"><strong>Remember</strong><br /><sub>Build a living profile over time</sub></td>
-    </tr>
-  </table>
-</div>
-
-<br />
-
-> Aura naturally engages users in dialogue, aligns with their communication vibe, and systematically maps their authentic personality traits in real time.
+**Stack:** LangGraph, FastAPI, PostgreSQL (SQLAlchemy async + LangGraph checkpointer), Gemini, Next.js
 
 ---
 
-## Purpose & Core Thesis
+## How it works
 
-Aura is designed to **identify, understand, and map a user's authentic personality—their communication vibe, decision-making instincts, lifestyle structure, social energy, and emotional composure—through natural conversation**.
-
-Rather than subjecting users to sterile psychological surveys or clinical questionnaires, Aura converses like a real companion:
-- **Discovers Communication Vibe**: Observes how you text (brevity, slang, humor, punctuation, energy) and calibrates its tone in real time.
-- **Dynamic Modality Handoff**: If your vibe resonates with a specific conversational archetype (witty banter, pragmatic mentorship, deep emotional empathy, or intellectual challenge), Aura seamlessly transitions into that modality via tool handoff.
-- **Directional Trait Elicitation**: Subtly weaves everyday scenarios and dilemmas into the flow of dialogue without ever using psychological jargon.
-- **Subagent Profiling & Live Map**: An internal profiling subagent derives concrete behavioral observations from your statements, calculates Bayesian confidence scores, and updates your live Personality Map in the UI as the chat progresses.
-
-<div align="center">
-  <sub><em>A quiet conversation in. A sharper sense of self out.</em></sub>
-</div>
-
-## The Aura experience
-
-Aura is intentionally built around a simple feeling: the interface should recede while the conversation gets more perceptive.
-
-| Conversation | Profile | Memory | Delivery |
-| :---: | :---: | :---: | :---: |
-| Natural, low-pressure dialogue | Directional trait signals | Evidence-backed observations | Token-by-token SSE streaming |
-
-<p align="center">
-  <img src="docs/aura-loop.svg" alt="Aura conversational loop: listen, adapt, explore, remember" width="100%" />
-</p>
-
----
-
-## The 4-Stage Conversational Loop
-
-<details>
-<summary>Open the technical flow</summary>
+Each user message runs through a four-node LangGraph graph:
 
 ```mermaid
 flowchart TD
-    START([User Message]) --> SA[1. Style Analyzer<br/>Regex heuristic: brevity, slang, energy]
-    SA --> TS[2. Trait Target Selector<br/>Selects lowest-confidence unmapped trait]
-    TS --> GEN[3. Aura Conversational Generator<br/>In-character streaming reply + situational probe]
-    
+    START([User Message]) --> SA[1. Style Analyzer<br/>Regex heuristics: length, slang, energy]
+    SA --> TS[2. Trait Target Selector<br/>Picks lowest-confidence trait]
+    TS --> GEN[3. Generator<br/>Streams reply with a trait probe]
+
     GEN --> ROUTE{Tool called?}
-    ROUTE -- "switch_persona" --> PT[persona_tools<br/>Switches archetype & emits SSE persona]
+    ROUTE -- "switch_persona" --> PT[persona_tools<br/>Switch persona, emit SSE persona event]
     PT --> GEN
-    
-    ROUTE -- "No (Text Streamed)" --> TE[4. Trait Profiler Subagent<br/>Analyzes dialogue for targeted trait evidence]
-    
+
+    ROUTE -- "No (text streamed)" --> TE[4. Trait Extractor<br/>Scores target trait from dialogue]
+
     TE --> EVAL{Sufficient evidence?}
-    EVAL -- Yes --> SAVE[Persist UserTraitScore & Observation in PostgreSQL<br/>Emit SSE 'trait_updated'<br/>Reset target to select next trait]
-    EVAL -- No --> KEEP[Retain target trait for follow-up turn]
-    
+    EVAL -- Yes --> SAVE[Persist score + observation<br/>Emit SSE trait_updated<br/>Clear target]
+    EVAL -- No --> KEEP[Keep target for next turn]
+
     SAVE --> END([END])
-    KEEP --> END([END])
+    KEEP --> END
 ```
 
-</details>
+1. **Style analyzer** ([style_analyzer.py](app/agent/nodes/style_analyzer.py)): regex-based estimate of message length preference and energy. No LLM call.
+2. **Trait target selector** ([elicitation.py](app/agent/nodes/elicitation.py)): reads the user's current scores from PostgreSQL and targets the trait with the lowest confidence (below 75%) that has no active target.
+3. **Generator** ([generator.py](app/agent/nodes/generator.py)): streams the reply token by token. The prompt includes the detected style and the target trait, so the reply includes a scenario that elicits evidence for it. The model can call a `switch_persona` tool to change persona.
+4. **Extractor** ([extractor.py](app/agent/nodes/extractor.py)): a separate LLM call that looks for evidence of the target trait in the conversation. If found, it returns a structured result (score, quote, reasoning, confidence delta), which is saved as a `TraitObservation` and merged into a running weighted `UserTraitScore`. The target is then cleared so the selector picks the next trait. Profiling is complete once all 8 traits reach 75% confidence.
 
-### Stage Breakdown:
-1. **Stage 1 (Personality Alignment & Modality Handoff)**: Aura begins in discovery mode (Nova). During turns 1–3, Aura assesses user style. If a distinct style matches an archetype (Leo, Marcus, Maya, Zane), Aura invokes the tool `switch_persona` to lock that modality.
-2. **Stage 2 (Dynamic Trait Targeting)**: Inspects the user's running profile in PostgreSQL and selects the single trait with the lowest confidence score (< 75%) to explore next.
-3. **Stage 3 (In-Character Elicitation & Token Streaming)**: Generates the conversational response as Aura, adapting to user texting cadence and weaving in a relatable probe. Tokens stream directly to the client via SSE with zero blocking.
-4. **Stage 4 (Subagent Trait Extraction & Persistence)**: A specialized profiling subagent evaluates the conversation specifically for the targeted trait. If sufficient evidence is present:
-   - Formulates the structured extraction (score, quote, reasoning, confidence delta).
-   - Persists the observation and running weighted score to PostgreSQL.
-   - Emits an SSE `trait_updated` event to the frontend.
-   - Clears the target so Stage 2 picks the next trait on the following turn.
-   - Repeats until all 8 traits reach confident completion (75%+).
+### Personas
+
+The agent starts in a discovery persona (Nova). During the first few turns it can switch to one of four fixed styles via the `switch_persona` tool, based on the user's detected style:
+
+| Persona | Style |
+| :--- | :--- |
+| Leo | Witty, quick banter |
+| Marcus | Grounded, direct |
+| Maya | Warm, emotionally attentive |
+| Zane | Analytical, challenging |
+
+Persona definitions live in [registry.py](app/agent/personas/registry.py).
 
 ---
 
-## Tracked Personality Dimensions
+## Traits
 
-Aura profiles 8 behavioral traits on normalized continuous scales (1.0 to 7.0):
+8 traits, each scored on a continuous 1.0–7.0 scale:
 
-| Trait Identifier | Domain | Spectrum Anchors (Low / High) |
+| Trait ID | Low | High |
 | :--- | :--- | :--- |
-| `communication_directness` | Communication | Diplomatic & Indirect / Direct & Candid |
-| `curiosity_breadth` | Intellect & Learning | Focused Specialist / Omnivorous Generalist |
-| `decision_speed` | Decision Making | Deliberate & Analytical / Rapid & Instinctive |
-| `structure_preference` | Work & Lifestyle | Fluid & Spontaneous / Structured & Methodical |
-| `social_energy` | Social & Energy | Solitary & Internally Focused / Extroverted & Interactive |
-| `humor_style` | Social & Energy | Dry & Deadpan / Light & Warmly Playful |
-| `risk_tolerance` | Disposition | Risk-Averse & Predictable / High Risk & Exploratory |
-| `stress_composure` | Disposition | Emotionally Expressive / Composed & Solution-Focused |
+| `communication_directness` | Diplomatic, indirect | Direct, candid |
+| `curiosity_breadth` | Focused specialist | Broad generalist |
+| `decision_speed` | Deliberate, analytical | Rapid, instinctive |
+| `structure_preference` | Fluid, spontaneous | Structured, methodical |
+| `social_energy` | Solitary | Extroverted |
+| `humor_style` | Dry, deadpan | Light, playful |
+| `risk_tolerance` | Risk-averse | Risk-seeking |
+| `stress_composure` | Emotionally expressive | Composed, solution-focused |
+
+The catalog is defined in [catalog.py](app/agent/traits/catalog.py) and seeded into the `TraitCatalog` table on startup.
 
 ---
 
-## Modular Prompts Architecture
-
-All system prompts are organized in clean, maintainable Markdown files under `app/agent/prompts/`:
+## Project layout
 
 ```text
-app/agent/prompts/
-├── base_aura.md               # Core thesis, identity, and mission of Aura
-├── elicitation.md             # Guidelines for natural scenario probes
-├── extraction.md              # Trait Profiler subagent scoring rubrics
-├── loader.py                  # Prompt loader with caching
-└── archetypes/
-    ├── discovery.md           # Nova: adaptive companion discovering vibe
-    ├── curious_banter.md      # Leo: witty, quick banter, playful friend
-    ├── pragmatic_mentor.md    # Marcus: grounded, calm, candid perspective
-    ├── empathetic_confidant.md# Maya: warm, intuitive, emotional depth
-    └── analytical_challenger.md # Zane: sharp intellectual sparring partner
+app/
+├── main.py                  # FastAPI app
+├── config.py                # Settings (env)
+├── agent/
+│   ├── graph.py             # LangGraph definition
+│   ├── state.py             # Graph state
+│   ├── nodes/               # style_analyzer, elicitation, generator, extractor, persona_selector
+│   ├── personas/registry.py
+│   ├── traits/              # catalog + schemas
+│   └── prompts/             # Markdown prompts + cached loader
+│       ├── base_aura.md
+│       ├── elicitation.md
+│       ├── extraction.md
+│       └── archetypes/      # one file per persona
+├── api/
+│   ├── schemas.py
+│   └── routes/              # chat, profile, traits, personas
+└── db/                      # models, session, init
+frontend/                    # Next.js app (chat UI, sessions sidebar, signals drawer)
+tests/                       # pytest
 ```
 
+### Data model
+
+| Table / model | Purpose |
+| :--- | :--- |
+| `TraitCatalog` | Trait definitions |
+| `UserTraitScore` | Running score and confidence per user and trait |
+| `TraitObservation` | Individual evidence records (quote, reasoning, score) |
+| `UnstructuredMemory` | Free-form memory entries |
+| `ChatMessageRecord` | Persisted chat messages for session history |
+
+LangGraph checkpoint state is stored in the same database via `CHECKPOINTER_DB_URL`.
+
 ---
 
-## Server-Sent Events (SSE) Streaming
+## API
 
-The `/api/chat/stream` endpoint streams real-time events to the frontend:
-
-| Event Type | Payload | Description |
+| Method | Path | Description |
 | :--- | :--- | :--- |
-| `delta` | `{"token": "..."}` | Live token-by-token conversational text stream. |
-| `persona` | `{"persona_id": "...", "locked": true}` | Emitted when Aura switches archetype modality. |
-| `target_trait` | `{"trait_id": "...", "name": "..."}` | Informs client of the active trait being explored. |
-| `trait_updated` | `{"trait_id": "...", "score": 6.2, "quote": "...", ...}` | Emitted when a trait observation is extracted and saved. |
-| `style` | `{"length_preference": "...", "energy": "..."}` | Live detected user texting cadence. |
-| `done` | `{"thread_id": "...", "done": true}` | Indicates end of turn streaming. |
+| POST | `/api/chat/stream` | Send a message; response is an SSE stream |
+| POST | `/api/chat/message` | Non-streaming variant |
+| GET | `/api/chat/threads/{thread_id}/history` | Checkpoint history for a thread |
+| GET | `/api/chat/sessions` | List chat sessions |
+| GET | `/api/chat/sessions/{thread_id}/messages` | Messages in a session |
+| DELETE | `/api/chat/sessions/{thread_id}` | Delete a session |
+| GET | `/api/profile/{user_id}/traits` | Current trait scores |
+| GET | `/api/profile/{user_id}/observations` | Evidence records |
+| POST | `/api/profile/{user_id}/reset` | Clear scores, observations, and memory |
+| GET | `/api/traits`, `/api/traits/{trait_id}` | Trait catalog |
+| GET | `/api/personas`, `/api/personas/{persona_id}` | Persona list |
+
+### SSE events (`/api/chat/stream`)
+
+| Event | Payload | Description |
+| :--- | :--- | :--- |
+| `delta` | `{"token": "..."}` | Next chunk of reply text |
+| `persona` | `{"persona_id": "...", "locked": true}` | Persona switched |
+| `target_trait` | `{"trait_id": "...", "name": "..."}` | Trait currently being probed |
+| `trait_updated` | `{"trait_id": "...", "score": 6.2, "quote": "...", ...}` | Observation extracted and saved |
+| `style` | `{"length_preference": "...", "energy": "..."}` | Detected user style |
+| `done` | `{"thread_id": "...", "done": true}` | End of turn |
+
+If the model returns zero tokens, the stream falls back to a fresh LLM retry with full context.
 
 ---
 
-## Getting Started
+## Setup
 
 ### Prerequisites
-- Python 3.11+
-- Node.js 18+ & npm
-- Docker and Docker Compose
-- Google Gemini API Key
 
-### 1. Database Initialization
-Start PostgreSQL via Docker Compose:
+- Python 3.11+
+- Node.js 18+
+- Docker and Docker Compose
+- Gemini API key
+
+### 1. Database
+
 ```bash
 docker compose up -d
 ```
 
-### 2. Backend Setup
+### 2. Backend
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -169,7 +163,8 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Ensure `.env` contains your Gemini API key:
+Set the following in `.env`:
+
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
 DEFAULT_CHAT_MODEL=gemini-3.5-flash-lite
@@ -177,26 +172,26 @@ DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/persona_agent
 CHECKPOINTER_DB_URL=postgresql://postgres:postgres@localhost:5432/persona_agent
 ```
 
-Start the FastAPI application:
+Run the server:
+
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
-### 3. Frontend Setup
-In a new terminal:
+### 3. Frontend
+
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-Visit `http://localhost:3000` to chat with Aura and watch your Personality Map develop in real time!
+The UI is at `http://localhost:3000`.
 
 ---
 
-## Testing
+## Tests
 
-Run the test suite with pytest:
 ```bash
 pytest tests/
 ```
