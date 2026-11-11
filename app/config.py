@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     # Default Models
     DEFAULT_CHAT_MODEL: str = "gemini-3.5-flash-lite"
     DEFAULT_EXTRACTOR_MODEL: str = "gemini-3.5-flash-lite"
+    DEFAULT_PERSONA_MODEL: str = "gemini-3.5-flash-lite"
 
     def get_gemini_key(self) -> Optional[str]:
         return self.GEMINI_API_KEY or self.GOOGLE_API_KEY or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")

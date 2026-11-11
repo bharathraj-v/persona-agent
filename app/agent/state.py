@@ -29,6 +29,7 @@ class AgentState(TypedDict):
     user_id: str
     persona_id: Optional[str]                   # 'discovery', 'curious_banter', etc.
     persona_locked: Optional[bool]              # Once chosen, locked to prevent jarring shifts
+    persona_assessment: Optional[Dict[str, Any]]  # Why/when the persona was frozen (persona_profiler)
     thread_id: Optional[str]
     user_style: Optional[DetectedStyle]
     targeted_traits: Optional[List[TargetedTrait]]  # Kept for backward compatibility

@@ -195,9 +195,9 @@ async def stream_chat_message(req: ChatMessageRequest, background_tasks: Backgro
                 tags = raw_tags if isinstance(raw_tags, list) else []
                 raw_metadata = safe_dict(event.get("metadata"))
                 node_name = raw_metadata.get("langgraph_node")
-                is_extractor = ("trait_extractor" in tags) or (node_name == "trait_evaluator")
+                is_extractor = bool({"trait_extractor", "persona_profiler"} & set(tags)) or node_name in ("trait_evaluator", "persona_profiler")
 
-                # Stream LLM tokens ONLY from conversational generator (never from trait_evaluator subagent)
+                # Stream LLM tokens ONLY from conversational generator (never from the trait_evaluator or persona_profiler subagents)
                 if event_type == "on_chat_model_stream" and not is_extractor:
                     raw_data = safe_dict(event.get("data"))
                     chunk = raw_data.get("chunk")
@@ -266,12 +266,12 @@ async def stream_chat_message(req: ChatMessageRequest, background_tasks: Backgro
                             })
                         }
 
-                elif event_type == "on_chain_end" and event.get("name") == "persona_tools":
+                elif event_type == "on_chain_end" and event.get("name") == "persona_profiler":
                     raw_data = safe_dict(event.get("data"))
                     output_data = safe_dict(raw_data.get("output"))
-                    if "persona_id" in output_data:
+                    if output_data.get("persona_locked") and "persona_id" in output_data:
                         resolved_persona = output_data["persona_id"]
-                        logger.info(f"[SSE] Persona switched via tool | thread={req.thread_id} | persona={resolved_persona}")
+                        logger.info(f"[SSE] Persona frozen by profiler | thread={req.thread_id} | persona={resolved_persona}")
                         yield {
                             "event": "persona",
                             "data": json.dumps({
