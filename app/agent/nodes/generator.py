@@ -5,7 +5,6 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from app.config import settings
 from app.agent.state import AgentState
 from app.agent.personas.registry import get_persona
-from app.agent.nodes.persona_selector import switch_persona
 from app.agent.prompts.loader import load_prompt
 
 logger = logging.getLogger(__name__)
@@ -79,51 +78,35 @@ async def generate_persona_response(state: AgentState) -> Dict[str, Any]:
             "Deliver this naturally in character so the user immediately understands why you'll be having fun exploring questions together."
         )
 
-    # If persona is not yet locked, guide the LLM to assess style and optionally switch
+    # While the persona is unlocked, the persona_profiler node is still assessing the user
     if not persona_locked:
-        discovery_instructions = (
-            "\n\n--- PERSONALITY DISCOVERY & HANDOFF ---\n"
-            "You are currently in discovery mode assessing the user's communication style.\n"
-            "If you detect a clear match with one of the specialized archetypes below, call the tool `switch_persona`:\n"
-            "- 'curious_banter' (Leo): Playful humor, casual slang, witty banter, or energetic vibe.\n"
-            "- 'pragmatic_mentor' (Marcus): Grounded, seeking candid advice, calm directness, practical wisdom.\n"
-            "- 'empathetic_confidant' (Maya): Sharing vulnerability, stress, emotional feelings, needs warmth.\n"
-            "- 'analytical_challenger' (Zane): Intellectual debates, logic dissection, contrarian ideas.\n\n"
-            "Guidelines:\n"
-            "- If the user's message is an initial greeting (e.g. just 'hi'), do NOT switch yet; introduce yourself warmly as Aura and keep observing.\n"
-            "- If you see a clear stylistic or thematic signal, invoke `switch_persona(persona_id=..., reasoning=...)` immediately.\n"
-            "- Do NOT mention tool calls or archetype names in plain user text."
+        system_content += (
+            "\n\n--- DISCOVERY MODE ---\n"
+            "You are still getting a feel for the user's communication style. Stay natural and neutral, "
+            "and keep the conversation flowing so their style comes through."
         )
-        if turn_count >= 3:
-            discovery_instructions += "\n- This is turn 3+: You must select and switch to the best matching archetype now via `switch_persona`."
-        system_content += discovery_instructions
 
     messages: List[AnyMessage] = [SystemMessage(content=system_content)] + messages_list
 
     llm = get_llm()
     if llm:
-        if not persona_locked:
-            llm_to_call = llm.bind_tools([switch_persona])
-        else:
-            llm_to_call = llm
-
         response = None
         run_config = {"tags": ["agent_conversation"]}
         try:
-            async for chunk in llm_to_call.astream(messages, config=run_config):
+            async for chunk in llm.astream(messages, config=run_config):
                 if response is None:
                     response = chunk
                 else:
                     response = response + chunk
         except Exception as stream_err:
             logger.warning(f"astream streaming fallback to ainvoke: {stream_err}")
-            response = await llm_to_call.ainvoke(messages, config=run_config)
+            response = await llm.ainvoke(messages, config=run_config)
 
-        if response is None or not (response.content or getattr(response, "tool_calls", None)):
+        if response is None or not response.content:
             logger.warning("Empty response received from astream/ainvoke, retrying with raw llm ainvoke...")
             response = await llm.ainvoke(messages, config=run_config)
 
-        if response is None or not (response.content or getattr(response, "tool_calls", None)):
+        if response is None or not response.content:
             response = AIMessage(content="Hey! I'm Aura, here to map your personality and vibe. How is your day going so far?")
 
         return {"messages": [response]}
